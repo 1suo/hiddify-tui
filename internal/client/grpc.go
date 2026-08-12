@@ -21,7 +21,8 @@ type GRPCClient struct {
 	api        controlv1.ControlServiceClient
 }
 
-const MaxLocalProfileBytes int64 = 10 << 20
+// MaxLocalProfileBytes mirrors the daemon's bounded profile upload limit.
+const MaxLocalProfileBytes int64 = 8 << 20
 
 func DefaultSocket() string {
 	if runtime.GOOS == "darwin" {
