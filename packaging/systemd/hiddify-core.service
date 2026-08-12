@@ -1,0 +1,26 @@
+[Unit]
+Description=Hiddify Core local control daemon
+Documentation=https://github.com/1suo/hiddify-tui
+Wants=network-online.target
+After=network-online.target
+ConditionPathIsExecutable=/usr/lib/hiddify/hiddify-core
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/hiddify/hiddify-core daemon run --state-dir=/var/lib/hiddify --socket=/run/hiddify/control.sock
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=20s
+UMask=0077
+StateDirectory=hiddify
+StateDirectoryMode=0700
+RuntimeDirectory=hiddify
+RuntimeDirectoryMode=0750
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+LockPersonality=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

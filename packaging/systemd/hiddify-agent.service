@@ -1,0 +1,21 @@
+[Unit]
+Description=Hiddify user-session system proxy agent
+Documentation=https://github.com/1suo/hiddify-tui
+After=graphical-session-pre.target
+PartOf=graphical-session.target
+ConditionPathIsExecutable=/usr/lib/hiddify/hiddify-agent
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/hiddify/hiddify-agent --socket=/run/hiddify/control.sock
+Restart=on-failure
+RestartSec=2s
+UMask=0077
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=full
+LockPersonality=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=default.target
