@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version: 1.25.12
@@ -29,6 +31,9 @@ jobs:
           buf lint
           buf generate
           git diff --exit-code -- gen
+      - name: Check protocol compatibility
+        if: github.event_name == 'pull_request'
+        run: buf breaking --against '.git#branch=main'
       - name: Build release targets and enforce binary budget
         run: |
           mkdir -p dist
