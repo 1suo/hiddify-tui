@@ -40,6 +40,7 @@ jobs:
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags='-s -w' -o "dist/hiddify-tui-${goos}-${goarch}${suffix}" ./cmd/hiddify-tui
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags='-s -w' -o "dist/hiddify-agent-${goos}-${goarch}${suffix}" ./cmd/hiddify-agent
           done
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o dist/hiddify-migrate-linux-amd64 ./cmd/hiddify-migrate
           find dist -type f -printf '%f %s bytes\n'
           size=$(wc -c < dist/hiddify-tui-linux-amd64)
           test "$size" -le 15728640 || { echo "hiddify-tui exceeds 15 MiB budget: $size bytes"; exit 1; }

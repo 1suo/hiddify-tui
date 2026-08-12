@@ -35,8 +35,16 @@ Create a redacted, non-mutating GUI migration plan with explicit source paths:
 go run ./cmd/hiddify-migrate --database /path/to/db --configs /path/to/configs
 ```
 
-The plan does not import profiles; applying it requires the compatible daemon
-control endpoint, and the original GUI must be closed before that later step.
+After reviewing the plan, import it only after completely exiting the GUI and
+its core process:
+
+```sh
+go run ./cmd/hiddify-migrate --database /path/to/db --configs /path/to/configs \
+  --apply --yes --gui-exited
+```
+
+Applying requires the compatible daemon control endpoint. The source database
+and config files remain read-only in both modes.
 
 The complete delivery plan and cross-repository dependencies are in
 [`TODO.md`](TODO.md).

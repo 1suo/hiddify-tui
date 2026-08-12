@@ -2,12 +2,15 @@
 package migrate
 
 import (
+	"bytes"
+	"context"
 	"database/sql"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 
+	"github.com/1suo/hiddify-tui/internal/control"
 	_ "modernc.org/sqlite"
 )
 
@@ -29,6 +32,21 @@ type Warning struct {
 type Plan struct {
 	Profiles []Profile `json:"profiles"`
 	Warnings []Warning `json:"warnings,omitempty"`
+}
+
+type ImportedProfile struct {
+	SourceID string `json:"source_id"`
+	TargetID string `json:"target_id"`
+}
+
+type Result struct {
+	Imported []ImportedProfile `json:"imported"`
+	Warnings []Warning         `json:"warnings,omitempty"`
+}
+
+type Target interface {
+	control.ProfileWriter
+	control.LocalProfileWriter
 }
 
 // ReadPlan opens the GUI database read-only. Local content is read from the
@@ -81,6 +99,42 @@ func ReadPlan(databasePath, configsDir string) (Plan, error) {
 	}
 	return plan, rows.Err()
 }
+
+// Apply imports a previously-read plan into the daemon. It never accesses the
+// GUI database or config directory, which lets callers separate review from a
+// deliberate write operation.
+func Apply(ctx context.Context, plan Plan, target Target) Result {
+	result := Result{Warnings: append([]Warning(nil), plan.Warnings...)}
+	activeID := ""
+	for _, profile := range plan.Profiles {
+		var (
+			imported control.Profile
+			err      error
+		)
+		switch profile.Kind {
+		case "remote":
+			imported, err = target.AddRemoteProfile(ctx, profile.URL, profile.Name, false)
+		case "local":
+			imported, err = target.AddLocalProfile(ctx, profile.Name, false, bytesReader(profile.Content))
+		}
+		if err != nil {
+			result.Warnings = append(result.Warnings, Warning{profile.SourceID, "import failed: " + err.Error()})
+			continue
+		}
+		result.Imported = append(result.Imported, ImportedProfile{profile.SourceID, imported.ID})
+		if profile.Active {
+			activeID = imported.ID
+		}
+	}
+	if activeID != "" {
+		if err := target.SetActiveProfile(ctx, activeID); err != nil {
+			result.Warnings = append(result.Warnings, Warning{Message: "set active profile failed: " + err.Error()})
+		}
+	}
+	return result
+}
+
+func bytesReader(content []byte) *bytes.Reader { return bytes.NewReader(content) }
 
 func redactURL(value string) string {
 	parsed, err := url.Parse(value)
