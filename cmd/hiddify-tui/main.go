@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/1suo/hiddify-tui/internal/cli"
 	"github.com/1suo/hiddify-tui/internal/client"
@@ -18,7 +19,16 @@ const version = "0.1.0-dev"
 
 func main() {
 	if len(os.Args) == 1 && term.IsTerminal(os.Stdin.Fd()) && term.IsTerminal(os.Stdout.Fd()) {
-		snapshot, err := client.Snapshot(context.Background(), unavailableControl{})
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		daemon, err := client.DialUnix(ctx, client.DefaultSocket())
+		if err == nil {
+			defer daemon.Close()
+		}
+		var snapshot control.Snapshot
+		if err == nil {
+			snapshot, err = client.Snapshot(ctx, daemon)
+		}
 		if err := tui.Run(snapshot, err); err != nil {
 			fmt.Fprintf(os.Stderr, "tui: %v\n", err)
 			os.Exit(cli.ExitRejected)
@@ -32,6 +42,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("hiddify-tui", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	jsonOutput := flags.Bool("json", false, "print JSON")
+	socket := flags.String("socket", client.DefaultSocket(), "local control socket")
+	timeout := flags.Duration("timeout", 3*time.Second, "daemon request timeout")
 	showVersion := flags.Bool("version", false, "print version")
 	if err := flags.Parse(args); err != nil {
 		return cli.ExitUsage
@@ -43,7 +55,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	remaining := flags.Args()
 	if len(remaining) == 1 && remaining[0] == "status" {
-		return cli.Status(context.Background(), unavailableControl{}, *jsonOutput, stdout, stderr)
+		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+		defer cancel()
+		daemon, err := client.DialUnix(ctx, *socket)
+		if err != nil {
+			return cli.Status(ctx, unavailableControl{err: err}, *jsonOutput, stdout, stderr)
+		}
+		defer daemon.Close()
+		return cli.Status(ctx, daemon, *jsonOutput, stdout, stderr)
 	}
 	if len(remaining) == 0 {
 		fmt.Fprintln(stderr, "usage: hiddify-tui [--json] status")
@@ -53,8 +72,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return cli.ExitUsage
 }
 
-type unavailableControl struct{}
+type unavailableControl struct {
+	err error
+}
 
-func (unavailableControl) GetSnapshot(context.Context) (control.Snapshot, error) {
+func (u unavailableControl) GetSnapshot(context.Context) (control.Snapshot, error) {
+	if u.err != nil {
+		return control.Snapshot{}, u.err
+	}
 	return control.Snapshot{}, client.ErrUnavailable
 }

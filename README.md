@@ -7,14 +7,15 @@
 
 This repository currently contains the first client-side foundation:
 
-- a versioned protobuf control API draft in `proto/control/v1`;
-- transport-neutral snapshot/client contracts and deterministic fake server;
+- a versioned protobuf/gRPC control API in `proto/control/v1`;
+- Unix-domain-socket gRPC client, snapshot/event recovery, and deterministic fake server;
 - stable `status` formatting and JSON/exit-code tests;
 - an alternate-screen Bubble Tea v2 dashboard, opened by running
   `hiddify-tui` from a terminal.
 
-There is no daemon transport yet. Consequently, `hiddify-tui status` correctly
-returns exit code `3` until the upstream daemon is available.
+The client connects to `/run/hiddify/control.sock` on Linux and
+`/var/run/hiddify/control.sock` on macOS. Until the upstream daemon implements
+that endpoint, `hiddify-tui status` correctly returns exit code `3`.
 
 ## Development
 
