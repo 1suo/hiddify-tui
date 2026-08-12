@@ -15,12 +15,14 @@ This repository currently contains the first client-side foundation:
   controls;
 - a standalone `hiddify-agent` that restores GNOME system-proxy settings after
   an expired lease or clean session shutdown;
-- a read-only `hiddify-migrate` plan tool for the current Hiddify GUI SQLite
-  profile database and its `configs/` directory.
+- `hiddify-tui migrate gui`, which produces a read-only migration plan for the
+  current Hiddify GUI SQLite profile database and its `configs/` directory;
+  the legacy `hiddify-migrate` wrapper remains available.
 
 The client connects to `/run/hiddify/control.sock` on Linux and
-`/var/run/hiddify/control.sock` on macOS. Until the upstream daemon implements
-that endpoint, `hiddify-tui status` correctly returns exit code `3`.
+`/var/run/hiddify/control.sock` on macOS. The companion core branch implements
+the Linux endpoint; published cross-platform core artifacts remain a release
+dependency.
 
 ## Development
 
@@ -32,14 +34,14 @@ GOCACHE=/tmp/hiddify-tui-go-cache go run ./cmd/hiddify-tui --version
 Create a redacted, non-mutating GUI migration plan with explicit source paths:
 
 ```sh
-go run ./cmd/hiddify-migrate --database /path/to/db --configs /path/to/configs
+go run ./cmd/hiddify-tui migrate gui --database /path/to/db --configs /path/to/configs --dry-run
 ```
 
 After reviewing the plan, import it only after completely exiting the GUI and
 its core process:
 
 ```sh
-go run ./cmd/hiddify-migrate --database /path/to/db --configs /path/to/configs \
+go run ./cmd/hiddify-tui migrate gui --database /path/to/db --configs /path/to/configs \
   --apply --yes --gui-exited
 ```
 

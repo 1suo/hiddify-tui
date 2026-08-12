@@ -13,6 +13,7 @@ import (
 	"github.com/1suo/hiddify-tui/internal/cli"
 	"github.com/1suo/hiddify-tui/internal/client"
 	"github.com/1suo/hiddify-tui/internal/control"
+	"github.com/1suo/hiddify-tui/internal/migrate"
 	"github.com/1suo/hiddify-tui/internal/tui"
 	"github.com/charmbracelet/x/term"
 )
@@ -75,6 +76,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	remaining := flags.Args()
+	if len(remaining) >= 1 && remaining[0] == "migrate" {
+		return runGUIMigration(remaining, *socket, *timeout, stdout, stderr)
+	}
 	if len(remaining) >= 1 && (remaining[0] == "autoconnect" || remaining[0] == "service" || remaining[0] == "agent" || remaining[0] == "diagnostics") {
 		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 		daemon, err := client.DialUnix(ctx, *socket)
@@ -354,6 +358,69 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return cli.ExitUsage
 }
 
+func runGUIMigration(args []string, socket string, timeout time.Duration, stdout, stderr io.Writer) int {
+	if len(args) < 2 || args[1] != "gui" {
+		return migrationUsage(stderr)
+	}
+	flags := flag.NewFlagSet("migrate gui", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	database := flags.String("database", "", "path to the Hiddify GUI SQLite database")
+	configs := flags.String("configs", "", "path to the Hiddify GUI config directory")
+	dryRun := flags.Bool("dry-run", false, "print the read-only migration plan")
+	apply := flags.Bool("apply", false, "import the reviewed plan into the daemon")
+	yes := flags.Bool("yes", false, "confirm daemon mutations")
+	guiExited := flags.Bool("gui-exited", false, "confirm the GUI and its core are stopped")
+	settingsPath := flags.String("settings", "", "optional GUI settings JSON to import")
+	if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 0 || *database == "" || *configs == "" || (*dryRun && *apply) {
+		return migrationUsage(stderr)
+	}
+	plan, err := migrate.ReadPlan(*database, *configs)
+	if err != nil {
+		fmt.Fprintf(stderr, "migrate gui: %v\n", err)
+		return cli.ExitRejected
+	}
+	if *dryRun || !*apply {
+		if err := json.NewEncoder(stdout).Encode(plan); err != nil {
+			fmt.Fprintf(stderr, "migrate gui: %v\n", err)
+			return cli.ExitRejected
+		}
+		return cli.ExitOK
+	}
+	if !*yes || !*guiExited {
+		fmt.Fprintln(stderr, "migrate gui --apply requires --yes and --gui-exited")
+		return cli.ExitUsage
+	}
+	var settings []byte
+	if *settingsPath != "" {
+		settings, err = os.ReadFile(*settingsPath)
+		if err != nil || !json.Valid(settings) {
+			fmt.Fprintln(stderr, "migrate gui: settings must be a readable JSON file")
+			return cli.ExitUsage
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	daemon, err := client.DialUnix(ctx, socket)
+	cancel()
+	if err != nil {
+		fmt.Fprintf(stderr, "migrate gui: %v\n", err)
+		return cli.ExitUnavailable
+	}
+	defer daemon.Close()
+	ctx, cancel = context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	result := migrate.Apply(ctx, plan, daemon)
+	if len(settings) != 0 {
+		if _, err := daemon.ImportSettings(ctx, settings); err != nil {
+			result.Warnings = append(result.Warnings, migrate.Warning{Message: "settings import failed: " + err.Error()})
+		}
+	}
+	if err := json.NewEncoder(stdout).Encode(result); err != nil {
+		fmt.Fprintf(stderr, "migrate gui: %v\n", err)
+		return cli.ExitRejected
+	}
+	return cli.ExitOK
+}
+
 func serviceUsage(stderr io.Writer) int {
 	fmt.Fprintln(stderr, "usage: hiddify-tui autoconnect status|enable|disable | service status | agent status | diagnostics")
 	return cli.ExitUsage
@@ -381,6 +448,11 @@ func connectionUsage(stderr io.Writer) int {
 
 func profileUsage(stderr io.Writer) int {
 	fmt.Fprintln(stderr, "usage: hiddify-tui [--json] profile list|show ID|add [--name NAME] [--activate] URL|add-file [--name NAME] [--activate] FILE|add-stdin [--name NAME] [--activate]|rename ID NAME|activate ID|refresh ID|delete ID --yes")
+	return cli.ExitUsage
+}
+
+func migrationUsage(stderr io.Writer) int {
+	fmt.Fprintln(stderr, "usage: hiddify-tui migrate gui --database PATH --configs DIR [--dry-run|--apply --yes --gui-exited] [--settings FILE]")
 	return cli.ExitUsage
 }
 
