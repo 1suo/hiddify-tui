@@ -20,9 +20,9 @@ import (
 const version = "0.1.0-dev"
 
 func main() {
-	if len(os.Args) == 1 && term.IsTerminal(os.Stdin.Fd()) && term.IsTerminal(os.Stdout.Fd()) {
-		dialCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		daemon, err := client.DialUnix(dialCtx, client.DefaultSocket())
+	if socket, timeout, ok := tuiInvocation(os.Args[1:]); ok {
+		dialCtx, cancel := context.WithTimeout(context.Background(), timeout)
+		daemon, err := client.DialUnix(dialCtx, socket)
 		cancel()
 		if err == nil {
 			defer daemon.Close()
@@ -41,6 +41,22 @@ func main() {
 		return
 	}
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+func tuiInvocation(args []string) (string, time.Duration, bool) {
+	if !term.IsTerminal(os.Stdin.Fd()) || !term.IsTerminal(os.Stdout.Fd()) {
+		return "", 0, false
+	}
+	flags := flag.NewFlagSet("hiddify-tui", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	socket := flags.String("socket", client.DefaultSocket(), "local control socket")
+	timeout := flags.Duration("timeout", 3*time.Second, "daemon request timeout")
+	jsonOutput := flags.Bool("json", false, "print JSON")
+	showVersion := flags.Bool("version", false, "print version")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *jsonOutput || *showVersion {
+		return "", 0, false
+	}
+	return *socket, *timeout, true
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
