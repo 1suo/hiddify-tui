@@ -46,6 +46,58 @@ func TestDashboardQuitsWithoutConnectionAction(t *testing.T) {
 	}
 }
 
+func TestDashboardRequestsConnectionActions(t *testing.T) {
+	operator := &recordingConnectionOperator{}
+	model := NewDashboard(control.Snapshot{}, nil)
+	model.connection = operator
+	model.ctx = context.Background()
+
+	updated, command := model.Update(tea.KeyPressMsg(tea.Key{Text: "c"}))
+	if result, ok := command().(connectionActionResult); !ok || result.err != nil {
+		t.Fatalf("connect result = %#v", command())
+	}
+	if operator.connects != 1 {
+		t.Fatalf("connect requests = %d, want 1", operator.connects)
+	}
+	model = updated.(Dashboard)
+	updated, command = model.Update(tea.KeyPressMsg(tea.Key{Text: "x"}))
+	if result, ok := command().(connectionActionResult); !ok || result.err != nil {
+		t.Fatalf("disconnect result = %#v", command())
+	}
+	if operator.disconnects != 1 {
+		t.Fatalf("disconnect requests = %d, want 1", operator.disconnects)
+	}
+	model = updated.(Dashboard)
+	_, command = model.Update(tea.KeyPressMsg(tea.Key{Text: "r"}))
+	if result, ok := command().(connectionActionResult); !ok || result.err != nil {
+		t.Fatalf("restart result = %#v", command())
+	}
+	if operator.restarts != 1 {
+		t.Fatalf("restart requests = %d, want 1", operator.restarts)
+	}
+}
+
+type recordingConnectionOperator struct {
+	connects    int
+	disconnects int
+	restarts    int
+}
+
+func (r *recordingConnectionOperator) Connect(context.Context, string, control.ConnectionMode) error {
+	r.connects++
+	return nil
+}
+
+func (r *recordingConnectionOperator) Disconnect(context.Context) error {
+	r.disconnects++
+	return nil
+}
+
+func (r *recordingConnectionOperator) Restart(context.Context) error {
+	r.restarts++
+	return nil
+}
+
 func TestDashboardAppliesLiveUpdate(t *testing.T) {
 	updates := make(chan dashboardUpdate, 1)
 	model := NewDashboard(control.Snapshot{}, nil)

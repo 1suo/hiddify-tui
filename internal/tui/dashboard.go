@@ -14,18 +14,20 @@ import (
 	"github.com/1suo/hiddify-tui/internal/control"
 )
 
-// Dashboard is the first interactive screen. It intentionally has no
-// connection-changing key: quitting this client must never disconnect the
-// daemon.
+// Dashboard is the first interactive screen. Quitting it never disconnects the
+// daemon; connection actions are explicit local-control requests.
 type Dashboard struct {
-	snapshot control.Snapshot
-	err      error
-	width    int
-	height   int
-	updates  <-chan dashboardUpdate
-	page     page
-	profiles []control.Profile
-	groups   []control.OutboundGroup
+	snapshot   control.Snapshot
+	err        error
+	width      int
+	height     int
+	updates    <-chan dashboardUpdate
+	page       page
+	profiles   []control.Profile
+	groups     []control.OutboundGroup
+	connection control.ConnectionOperator
+	ctx        context.Context
+	action     string
 }
 
 type page string
@@ -43,6 +45,11 @@ type dashboardUpdate struct {
 	err      error
 	profiles []control.Profile
 	groups   []control.OutboundGroup
+}
+
+type connectionActionResult struct {
+	action string
+	err    error
 }
 
 func NewDashboard(snapshot control.Snapshot, err error) Dashboard {
@@ -67,12 +74,24 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.page = pageLogs
 		case "5", "s":
 			m.page = pageSettings
+		case "c":
+			return m, m.connectionAction("connect")
+		case "x":
+			return m, m.connectionAction("disconnect")
+		case "r":
+			return m, m.connectionAction("restart")
 		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case dashboardUpdate:
 		m.snapshot, m.err, m.profiles, m.groups = msg.snapshot, msg.err, msg.profiles, msg.groups
 		return m, waitForDashboardUpdate(m.updates)
+	case connectionActionResult:
+		if msg.err != nil {
+			m.action = fmt.Sprintf("%s failed: %v", msg.action, msg.err)
+		} else {
+			m.action = msg.action + " requested"
+		}
 	}
 	return m, nil
 }
@@ -94,7 +113,10 @@ func (m Dashboard) View() tea.View {
 	if m.err != nil {
 		content += fmt.Sprintf("\n\nDaemon unavailable\n%s", m.err)
 	}
-	content += "\n\n1 Dashboard  2 Profiles  3 Outbounds  4 Logs  5 Settings\nq / Ctrl+C: quit (connection stays active)"
+	if m.action != "" {
+		content += "\n\n" + m.action
+	}
+	content += "\n\n1 Dashboard  2 Profiles  3 Outbounds  4 Logs  5 Settings\nc connect  x disconnect  r restart  q / Ctrl+C quit (connection stays active)"
 
 	view := tea.NewView(content)
 	view.AltScreen = true
@@ -168,12 +190,34 @@ func RunLive(ctx context.Context, daemon control.Client, watcher control.Watcher
 	updates := make(chan dashboardUpdate, 1)
 	model := NewDashboard(control.Snapshot{}, nil)
 	model.updates = updates
+	model.ctx = ctx
+	model.connection, _ = daemon.(control.ConnectionOperator)
 	go streamDashboard(watchCtx, daemon, watcher, updates)
 	_, runErr := tea.NewProgram(model).Run()
 	if errors.Is(runErr, tea.ErrInterrupted) {
 		return nil
 	}
 	return runErr
+}
+
+func (m Dashboard) connectionAction(action string) tea.Cmd {
+	if m.connection == nil {
+		return func() tea.Msg {
+			return connectionActionResult{action: action, err: errors.New("daemon does not support connection controls")}
+		}
+	}
+	return func() tea.Msg {
+		var err error
+		switch action {
+		case "connect":
+			err = m.connection.Connect(m.ctx, "", "")
+		case "disconnect":
+			err = m.connection.Disconnect(m.ctx)
+		case "restart":
+			err = m.connection.Restart(m.ctx)
+		}
+		return connectionActionResult{action: action, err: err}
+	}
 }
 
 func waitForDashboardUpdate(updates <-chan dashboardUpdate) tea.Cmd {
