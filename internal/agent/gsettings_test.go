@@ -65,3 +65,14 @@ func TestGSettingsBackendRejectsMalformedState(t *testing.T) {
 		t.Fatalf("runner calls = %#v", runner.calls)
 	}
 }
+
+func TestDesiredGSettingsProxy(t *testing.T) {
+	backend := &GSettingsBackend{runner: &fakeRunner{outputs: map[string]string{}}}
+	if err := backend.Apply(context.Background(), DesiredGSettingsProxy("127.0.0.1", 12334)); err != nil {
+		t.Fatal(err)
+	}
+	runner := backend.runner.(*fakeRunner)
+	if len(runner.calls) != 4 || !reflect.DeepEqual(runner.calls[2].args, []string{"set", "org.gnome.system.proxy.http", "host", "'127.0.0.1'"}) {
+		t.Fatalf("calls = %#v", runner.calls)
+	}
+}

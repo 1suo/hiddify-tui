@@ -38,6 +38,7 @@ service ControlService {
   rpc GetServiceInfo(GetServiceInfoRequest) returns (ServiceInfo);
   rpc SetAutoConnect(SetAutoConnectRequest) returns (OperationResult);
   rpc GetDiagnostics(GetDiagnosticsRequest) returns (Diagnostics);
+  rpc PollAgent(AgentPollRequest) returns (AgentInstruction);
 }
 
 message GetSnapshotRequest {}
@@ -300,6 +301,19 @@ message AgentHealth {
   bool required = 1;
   bool connected = 2;
   string last_error = 3;
+}
+
+// The user-session proxy agent polls through the same OS-authorized local
+// socket. The daemon never accepts arbitrary proxy endpoints from an agent.
+message AgentPollRequest {
+  bool applied = 1;
+  string last_error = 2;
+}
+message AgentInstruction {
+  bool system_proxy_enabled = 1;
+  string host = 2;
+  uint32 port = 3;
+  uint32 lease_seconds = 4;
 }
 
 enum ConnectionMode {

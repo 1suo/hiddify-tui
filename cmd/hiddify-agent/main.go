@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/1suo/hiddify-tui/internal/agent"
+	"github.com/1suo/hiddify-tui/internal/client"
 )
 
 func main() {
@@ -41,6 +42,43 @@ func main() {
 	if _, err := manager.RestoreExpired(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "hiddify-agent: restore expired proxy state: %v\n", err)
 	}
+	applied := false
+	lastError := ""
+	sync := func() {
+		requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		daemon, err := client.DialUnix(requestCtx, *socket)
+		if err != nil {
+			if _, restoreErr := manager.RestoreExpired(ctx); restoreErr != nil {
+				fmt.Fprintf(os.Stderr, "hiddify-agent: restore expired proxy state: %v\n", restoreErr)
+			}
+			return
+		}
+		defer daemon.Close()
+		instruction, err := daemon.PollAgent(requestCtx, applied, lastError)
+		if err != nil {
+			lastError = err.Error()
+			return
+		}
+		if !instruction.SystemProxyEnabled {
+			if err := manager.Restore(requestCtx); err != nil {
+				lastError = err.Error()
+				return
+			}
+			applied, lastError = false, ""
+			return
+		}
+		if instruction.Host == "" || instruction.Port == 0 || instruction.LeaseSeconds == 0 {
+			lastError = "invalid daemon proxy instruction"
+			return
+		}
+		if err := manager.Apply(requestCtx, agent.DesiredGSettingsProxy(instruction.Host, instruction.Port), time.Duration(instruction.LeaseSeconds)*time.Second); err != nil {
+			lastError = err.Error()
+			return
+		}
+		applied, lastError = true, ""
+	}
+	sync()
 	ticker := time.NewTicker(*checkInterval)
 	defer ticker.Stop()
 	for {
@@ -55,9 +93,7 @@ func main() {
 			}
 			return
 		case <-ticker.C:
-			if _, err := manager.RestoreExpired(ctx); err != nil {
-				fmt.Fprintf(os.Stderr, "hiddify-agent: restore expired proxy state: %v\n", err)
-			}
+			sync()
 		}
 	}
 }

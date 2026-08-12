@@ -358,6 +358,16 @@ func (c *GRPCClient) GetDiagnostics(ctx context.Context) (control.Diagnostics, e
 	return control.Diagnostics{DaemonVersion: response.GetDaemonVersion(), CoreVersion: response.GetCoreVersion(), SocketPath: response.GetSocketPath(), ActiveListeners: response.GetActiveListeners(), LastServiceError: response.GetLastServiceError()}, nil
 }
 
+// PollAgent exchanges user-session proxy health for a daemon-owned desired
+// state. It is used only by hiddify-agent, over the same local IPC boundary.
+func (c *GRPCClient) PollAgent(ctx context.Context, applied bool, lastError string) (control.AgentInstruction, error) {
+	response, err := c.api.PollAgent(ctx, &controlv1.AgentPollRequest{Applied: applied, LastError: lastError})
+	if err != nil {
+		return control.AgentInstruction{}, fmt.Errorf("poll agent: %w", err)
+	}
+	return control.AgentInstruction{SystemProxyEnabled: response.GetSystemProxyEnabled(), Host: response.GetHost(), Port: response.GetPort(), LeaseSeconds: response.GetLeaseSeconds()}, nil
+}
+
 func settingsFromProto(settings *controlv1.Settings) control.Settings {
 	return control.Settings{RedactedJSON: append([]byte(nil), settings.GetRedactedJson()...)}
 }

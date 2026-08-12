@@ -71,6 +71,13 @@ type AgentHealth struct {
 	LastError string `json:"last_error,omitempty"`
 }
 
+type AgentInstruction struct {
+	SystemProxyEnabled bool
+	Host               string
+	Port               uint32
+	LeaseSeconds       uint32
+}
+
 type ProfileKind string
 
 const (

@@ -46,6 +46,7 @@ const (
 	ControlService_GetServiceInfo_FullMethodName     = "/hiddify.control.v1.ControlService/GetServiceInfo"
 	ControlService_SetAutoConnect_FullMethodName     = "/hiddify.control.v1.ControlService/SetAutoConnect"
 	ControlService_GetDiagnostics_FullMethodName     = "/hiddify.control.v1.ControlService/GetDiagnostics"
+	ControlService_PollAgent_FullMethodName          = "/hiddify.control.v1.ControlService/PollAgent"
 )
 
 // ControlServiceClient is the client API for ControlService service.
@@ -83,6 +84,7 @@ type ControlServiceClient interface {
 	GetServiceInfo(ctx context.Context, in *GetServiceInfoRequest, opts ...grpc.CallOption) (*ServiceInfo, error)
 	SetAutoConnect(ctx context.Context, in *SetAutoConnectRequest, opts ...grpc.CallOption) (*OperationResult, error)
 	GetDiagnostics(ctx context.Context, in *GetDiagnosticsRequest, opts ...grpc.CallOption) (*Diagnostics, error)
+	PollAgent(ctx context.Context, in *AgentPollRequest, opts ...grpc.CallOption) (*AgentInstruction, error)
 }
 
 type controlServiceClient struct {
@@ -384,6 +386,16 @@ func (c *controlServiceClient) GetDiagnostics(ctx context.Context, in *GetDiagno
 	return out, nil
 }
 
+func (c *controlServiceClient) PollAgent(ctx context.Context, in *AgentPollRequest, opts ...grpc.CallOption) (*AgentInstruction, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AgentInstruction)
+	err := c.cc.Invoke(ctx, ControlService_PollAgent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ControlServiceServer is the server API for ControlService service.
 // All implementations must embed UnimplementedControlServiceServer
 // for forward compatibility.
@@ -419,6 +431,7 @@ type ControlServiceServer interface {
 	GetServiceInfo(context.Context, *GetServiceInfoRequest) (*ServiceInfo, error)
 	SetAutoConnect(context.Context, *SetAutoConnectRequest) (*OperationResult, error)
 	GetDiagnostics(context.Context, *GetDiagnosticsRequest) (*Diagnostics, error)
+	PollAgent(context.Context, *AgentPollRequest) (*AgentInstruction, error)
 	mustEmbedUnimplementedControlServiceServer()
 }
 
@@ -509,6 +522,9 @@ func (UnimplementedControlServiceServer) SetAutoConnect(context.Context, *SetAut
 }
 func (UnimplementedControlServiceServer) GetDiagnostics(context.Context, *GetDiagnosticsRequest) (*Diagnostics, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetDiagnostics not implemented")
+}
+func (UnimplementedControlServiceServer) PollAgent(context.Context, *AgentPollRequest) (*AgentInstruction, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PollAgent not implemented")
 }
 func (UnimplementedControlServiceServer) mustEmbedUnimplementedControlServiceServer() {}
 func (UnimplementedControlServiceServer) testEmbeddedByValue()                        {}
@@ -992,6 +1008,24 @@ func _ControlService_GetDiagnostics_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ControlService_PollAgent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AgentPollRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlServiceServer).PollAgent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControlService_PollAgent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlServiceServer).PollAgent(ctx, req.(*AgentPollRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ControlService_ServiceDesc is the grpc.ServiceDesc for ControlService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1094,6 +1128,10 @@ var ControlService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetDiagnostics",
 			Handler:    _ControlService_GetDiagnostics_Handler,
+		},
+		{
+			MethodName: "PollAgent",
+			Handler:    _ControlService_PollAgent_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

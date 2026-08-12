@@ -104,3 +104,16 @@ func isGSettingsSchema(schema string) bool {
 	}
 	return false
 }
+
+// DesiredGSettingsProxy constructs the minimum GNOME settings required for a
+// loopback HTTP proxy. The manager still captures every existing schema value
+// before applying this partial desired state, making restore exact.
+func DesiredGSettingsProxy(host string, port uint32) ProxyState {
+	state, _ := json.Marshal(gsettingsState{Version: 1, Values: []gsettingsValue{
+		{Schema: "org.gnome.system.proxy", Key: "mode", Value: "'manual'"},
+		{Schema: "org.gnome.system.proxy", Key: "use-same-proxy", Value: "true"},
+		{Schema: "org.gnome.system.proxy.http", Key: "host", Value: "'" + host + "'"},
+		{Schema: "org.gnome.system.proxy.http", Key: "port", Value: fmt.Sprintf("uint32 %d", port)},
+	}})
+	return ProxyState(state)
+}

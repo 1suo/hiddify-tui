@@ -3283,6 +3283,128 @@ func (x *AgentHealth) GetLastError() string {
 	return ""
 }
 
+// The user-session proxy agent polls through the same OS-authorized local
+// socket. The daemon never accepts arbitrary proxy endpoints from an agent.
+type AgentPollRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Applied       bool                   `protobuf:"varint,1,opt,name=applied,proto3" json:"applied,omitempty"`
+	LastError     string                 `protobuf:"bytes,2,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentPollRequest) Reset() {
+	*x = AgentPollRequest{}
+	mi := &file_control_v1_control_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentPollRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentPollRequest) ProtoMessage() {}
+
+func (x *AgentPollRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_control_v1_control_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentPollRequest.ProtoReflect.Descriptor instead.
+func (*AgentPollRequest) Descriptor() ([]byte, []int) {
+	return file_control_v1_control_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *AgentPollRequest) GetApplied() bool {
+	if x != nil {
+		return x.Applied
+	}
+	return false
+}
+
+func (x *AgentPollRequest) GetLastError() string {
+	if x != nil {
+		return x.LastError
+	}
+	return ""
+}
+
+type AgentInstruction struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	SystemProxyEnabled bool                   `protobuf:"varint,1,opt,name=system_proxy_enabled,json=systemProxyEnabled,proto3" json:"system_proxy_enabled,omitempty"`
+	Host               string                 `protobuf:"bytes,2,opt,name=host,proto3" json:"host,omitempty"`
+	Port               uint32                 `protobuf:"varint,3,opt,name=port,proto3" json:"port,omitempty"`
+	LeaseSeconds       uint32                 `protobuf:"varint,4,opt,name=lease_seconds,json=leaseSeconds,proto3" json:"lease_seconds,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *AgentInstruction) Reset() {
+	*x = AgentInstruction{}
+	mi := &file_control_v1_control_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentInstruction) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentInstruction) ProtoMessage() {}
+
+func (x *AgentInstruction) ProtoReflect() protoreflect.Message {
+	mi := &file_control_v1_control_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentInstruction.ProtoReflect.Descriptor instead.
+func (*AgentInstruction) Descriptor() ([]byte, []int) {
+	return file_control_v1_control_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *AgentInstruction) GetSystemProxyEnabled() bool {
+	if x != nil {
+		return x.SystemProxyEnabled
+	}
+	return false
+}
+
+func (x *AgentInstruction) GetHost() string {
+	if x != nil {
+		return x.Host
+	}
+	return ""
+}
+
+func (x *AgentInstruction) GetPort() uint32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *AgentInstruction) GetLeaseSeconds() uint32 {
+	if x != nil {
+		return x.LeaseSeconds
+	}
+	return 0
+}
+
 var File_control_v1_control_proto protoreflect.FileDescriptor
 
 const file_control_v1_control_proto_rawDesc = "" +
@@ -3489,7 +3611,16 @@ const file_control_v1_control_proto_rawDesc = "" +
 	"\brequired\x18\x01 \x01(\bR\brequired\x12\x1c\n" +
 	"\tconnected\x18\x02 \x01(\bR\tconnected\x12\x1d\n" +
 	"\n" +
-	"last_error\x18\x03 \x01(\tR\tlastError*\x8d\x01\n" +
+	"last_error\x18\x03 \x01(\tR\tlastError\"K\n" +
+	"\x10AgentPollRequest\x12\x18\n" +
+	"\aapplied\x18\x01 \x01(\bR\aapplied\x12\x1d\n" +
+	"\n" +
+	"last_error\x18\x02 \x01(\tR\tlastError\"\x91\x01\n" +
+	"\x10AgentInstruction\x120\n" +
+	"\x14system_proxy_enabled\x18\x01 \x01(\bR\x12systemProxyEnabled\x12\x12\n" +
+	"\x04host\x18\x02 \x01(\tR\x04host\x12\x12\n" +
+	"\x04port\x18\x03 \x01(\rR\x04port\x12#\n" +
+	"\rlease_seconds\x18\x04 \x01(\rR\fleaseSeconds*\x8d\x01\n" +
 	"\x0eConnectionMode\x12\x1f\n" +
 	"\x1bCONNECTION_MODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13CONNECTION_MODE_TUN\x10\x01\x12 \n" +
@@ -3525,7 +3656,7 @@ const file_control_v1_control_proto_rawDesc = "" +
 	"\x18CONNECTION_STATE_STARTED\x10\x03\x12\x1d\n" +
 	"\x19CONNECTION_STATE_STOPPING\x10\x04\x12#\n" +
 	"\x1fCONNECTION_STATE_RECONNECT_WAIT\x10\x05\x12\x1b\n" +
-	"\x17CONNECTION_STATE_FAILED\x10\x062\xd8\x13\n" +
+	"\x17CONNECTION_STATE_FAILED\x10\x062\xb1\x14\n" +
 	"\x0eControlService\x12S\n" +
 	"\vGetSnapshot\x12&.hiddify.control.v1.GetSnapshotRequest\x1a\x1c.hiddify.control.v1.Snapshot\x12L\n" +
 	"\vWatchEvents\x12 .hiddify.control.v1.WatchRequest\x1a\x19.hiddify.control.v1.Event0\x01\x12R\n" +
@@ -3555,7 +3686,8 @@ const file_control_v1_control_proto_rawDesc = "" +
 	"\x0eImportSettings\x12).hiddify.control.v1.ImportSettingsRequest\x1a\x1c.hiddify.control.v1.Settings\x12\\\n" +
 	"\x0eGetServiceInfo\x12).hiddify.control.v1.GetServiceInfoRequest\x1a\x1f.hiddify.control.v1.ServiceInfo\x12`\n" +
 	"\x0eSetAutoConnect\x12).hiddify.control.v1.SetAutoConnectRequest\x1a#.hiddify.control.v1.OperationResult\x12\\\n" +
-	"\x0eGetDiagnostics\x12).hiddify.control.v1.GetDiagnosticsRequest\x1a\x1f.hiddify.control.v1.DiagnosticsB6Z4github.com/1suo/hiddify-tui/gen/control/v1;controlv1b\x06proto3"
+	"\x0eGetDiagnostics\x12).hiddify.control.v1.GetDiagnosticsRequest\x1a\x1f.hiddify.control.v1.Diagnostics\x12W\n" +
+	"\tPollAgent\x12$.hiddify.control.v1.AgentPollRequest\x1a$.hiddify.control.v1.AgentInstructionB6Z4github.com/1suo/hiddify-tui/gen/control/v1;controlv1b\x06proto3"
 
 var (
 	file_control_v1_control_proto_rawDescOnce sync.Once
@@ -3570,7 +3702,7 @@ func file_control_v1_control_proto_rawDescGZIP() []byte {
 }
 
 var file_control_v1_control_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_control_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
+var file_control_v1_control_proto_msgTypes = make([]protoimpl.MessageInfo, 54)
 var file_control_v1_control_proto_goTypes = []any{
 	(ConnectionMode)(0),                // 0: hiddify.control.v1.ConnectionMode
 	(ProfileKind)(0),                   // 1: hiddify.control.v1.ProfileKind
@@ -3629,6 +3761,8 @@ var file_control_v1_control_proto_goTypes = []any{
 	(*TrafficStats)(nil),               // 54: hiddify.control.v1.TrafficStats
 	(*SystemStats)(nil),                // 55: hiddify.control.v1.SystemStats
 	(*AgentHealth)(nil),                // 56: hiddify.control.v1.AgentHealth
+	(*AgentPollRequest)(nil),           // 57: hiddify.control.v1.AgentPollRequest
+	(*AgentInstruction)(nil),           // 58: hiddify.control.v1.AgentInstruction
 }
 var file_control_v1_control_proto_depIdxs = []int32{
 	4,  // 0: hiddify.control.v1.Snapshot.connection_state:type_name -> hiddify.control.v1.ConnectionState
@@ -3679,35 +3813,37 @@ var file_control_v1_control_proto_depIdxs = []int32{
 	49, // 45: hiddify.control.v1.ControlService.GetServiceInfo:input_type -> hiddify.control.v1.GetServiceInfoRequest
 	51, // 46: hiddify.control.v1.ControlService.SetAutoConnect:input_type -> hiddify.control.v1.SetAutoConnectRequest
 	52, // 47: hiddify.control.v1.ControlService.GetDiagnostics:input_type -> hiddify.control.v1.GetDiagnosticsRequest
-	6,  // 48: hiddify.control.v1.ControlService.GetSnapshot:output_type -> hiddify.control.v1.Snapshot
-	8,  // 49: hiddify.control.v1.ControlService.WatchEvents:output_type -> hiddify.control.v1.Event
-	17, // 50: hiddify.control.v1.ControlService.Connect:output_type -> hiddify.control.v1.OperationResult
-	17, // 51: hiddify.control.v1.ControlService.Disconnect:output_type -> hiddify.control.v1.OperationResult
-	17, // 52: hiddify.control.v1.ControlService.Restart:output_type -> hiddify.control.v1.OperationResult
-	20, // 53: hiddify.control.v1.ControlService.ListProfiles:output_type -> hiddify.control.v1.ListProfilesResponse
-	21, // 54: hiddify.control.v1.ControlService.GetProfile:output_type -> hiddify.control.v1.Profile
-	21, // 55: hiddify.control.v1.ControlService.AddRemoteProfile:output_type -> hiddify.control.v1.Profile
-	21, // 56: hiddify.control.v1.ControlService.AddLocalProfile:output_type -> hiddify.control.v1.Profile
-	21, // 57: hiddify.control.v1.ControlService.UpdateProfile:output_type -> hiddify.control.v1.Profile
-	17, // 58: hiddify.control.v1.ControlService.RefreshProfile:output_type -> hiddify.control.v1.OperationResult
-	17, // 59: hiddify.control.v1.ControlService.DeleteProfile:output_type -> hiddify.control.v1.OperationResult
-	17, // 60: hiddify.control.v1.ControlService.SetActiveProfile:output_type -> hiddify.control.v1.OperationResult
-	31, // 61: hiddify.control.v1.ControlService.ListOutboundGroups:output_type -> hiddify.control.v1.ListOutboundGroupsResponse
-	17, // 62: hiddify.control.v1.ControlService.SelectOutbound:output_type -> hiddify.control.v1.OperationResult
-	17, // 63: hiddify.control.v1.ControlService.TestOutbounds:output_type -> hiddify.control.v1.OperationResult
-	37, // 64: hiddify.control.v1.ControlService.TailLogs:output_type -> hiddify.control.v1.LogEntry
-	17, // 65: hiddify.control.v1.ControlService.ClearLogs:output_type -> hiddify.control.v1.OperationResult
-	40, // 66: hiddify.control.v1.ControlService.GetSettings:output_type -> hiddify.control.v1.Settings
-	42, // 67: hiddify.control.v1.ControlService.ValidateSettings:output_type -> hiddify.control.v1.ValidationResult
-	40, // 68: hiddify.control.v1.ControlService.UpdateSettings:output_type -> hiddify.control.v1.Settings
-	40, // 69: hiddify.control.v1.ControlService.ResetSettings:output_type -> hiddify.control.v1.Settings
-	47, // 70: hiddify.control.v1.ControlService.ExportSettings:output_type -> hiddify.control.v1.ExportSettingsResponse
-	40, // 71: hiddify.control.v1.ControlService.ImportSettings:output_type -> hiddify.control.v1.Settings
-	50, // 72: hiddify.control.v1.ControlService.GetServiceInfo:output_type -> hiddify.control.v1.ServiceInfo
-	17, // 73: hiddify.control.v1.ControlService.SetAutoConnect:output_type -> hiddify.control.v1.OperationResult
-	53, // 74: hiddify.control.v1.ControlService.GetDiagnostics:output_type -> hiddify.control.v1.Diagnostics
-	48, // [48:75] is the sub-list for method output_type
-	21, // [21:48] is the sub-list for method input_type
+	57, // 48: hiddify.control.v1.ControlService.PollAgent:input_type -> hiddify.control.v1.AgentPollRequest
+	6,  // 49: hiddify.control.v1.ControlService.GetSnapshot:output_type -> hiddify.control.v1.Snapshot
+	8,  // 50: hiddify.control.v1.ControlService.WatchEvents:output_type -> hiddify.control.v1.Event
+	17, // 51: hiddify.control.v1.ControlService.Connect:output_type -> hiddify.control.v1.OperationResult
+	17, // 52: hiddify.control.v1.ControlService.Disconnect:output_type -> hiddify.control.v1.OperationResult
+	17, // 53: hiddify.control.v1.ControlService.Restart:output_type -> hiddify.control.v1.OperationResult
+	20, // 54: hiddify.control.v1.ControlService.ListProfiles:output_type -> hiddify.control.v1.ListProfilesResponse
+	21, // 55: hiddify.control.v1.ControlService.GetProfile:output_type -> hiddify.control.v1.Profile
+	21, // 56: hiddify.control.v1.ControlService.AddRemoteProfile:output_type -> hiddify.control.v1.Profile
+	21, // 57: hiddify.control.v1.ControlService.AddLocalProfile:output_type -> hiddify.control.v1.Profile
+	21, // 58: hiddify.control.v1.ControlService.UpdateProfile:output_type -> hiddify.control.v1.Profile
+	17, // 59: hiddify.control.v1.ControlService.RefreshProfile:output_type -> hiddify.control.v1.OperationResult
+	17, // 60: hiddify.control.v1.ControlService.DeleteProfile:output_type -> hiddify.control.v1.OperationResult
+	17, // 61: hiddify.control.v1.ControlService.SetActiveProfile:output_type -> hiddify.control.v1.OperationResult
+	31, // 62: hiddify.control.v1.ControlService.ListOutboundGroups:output_type -> hiddify.control.v1.ListOutboundGroupsResponse
+	17, // 63: hiddify.control.v1.ControlService.SelectOutbound:output_type -> hiddify.control.v1.OperationResult
+	17, // 64: hiddify.control.v1.ControlService.TestOutbounds:output_type -> hiddify.control.v1.OperationResult
+	37, // 65: hiddify.control.v1.ControlService.TailLogs:output_type -> hiddify.control.v1.LogEntry
+	17, // 66: hiddify.control.v1.ControlService.ClearLogs:output_type -> hiddify.control.v1.OperationResult
+	40, // 67: hiddify.control.v1.ControlService.GetSettings:output_type -> hiddify.control.v1.Settings
+	42, // 68: hiddify.control.v1.ControlService.ValidateSettings:output_type -> hiddify.control.v1.ValidationResult
+	40, // 69: hiddify.control.v1.ControlService.UpdateSettings:output_type -> hiddify.control.v1.Settings
+	40, // 70: hiddify.control.v1.ControlService.ResetSettings:output_type -> hiddify.control.v1.Settings
+	47, // 71: hiddify.control.v1.ControlService.ExportSettings:output_type -> hiddify.control.v1.ExportSettingsResponse
+	40, // 72: hiddify.control.v1.ControlService.ImportSettings:output_type -> hiddify.control.v1.Settings
+	50, // 73: hiddify.control.v1.ControlService.GetServiceInfo:output_type -> hiddify.control.v1.ServiceInfo
+	17, // 74: hiddify.control.v1.ControlService.SetAutoConnect:output_type -> hiddify.control.v1.OperationResult
+	53, // 75: hiddify.control.v1.ControlService.GetDiagnostics:output_type -> hiddify.control.v1.Diagnostics
+	58, // 76: hiddify.control.v1.ControlService.PollAgent:output_type -> hiddify.control.v1.AgentInstruction
+	49, // [49:77] is the sub-list for method output_type
+	21, // [21:49] is the sub-list for method input_type
 	21, // [21:21] is the sub-list for extension type_name
 	21, // [21:21] is the sub-list for extension extendee
 	0,  // [0:21] is the sub-list for field type_name
@@ -3740,7 +3876,7 @@ func file_control_v1_control_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_control_v1_control_proto_rawDesc), len(file_control_v1_control_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   52,
+			NumMessages:   54,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
