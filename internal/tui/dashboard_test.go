@@ -43,6 +43,26 @@ func TestDashboardRendersLiveStatistics(t *testing.T) {
 	}
 }
 
+func TestDashboardFitsTypicalContentAt80By24(t *testing.T) {
+	model := NewDashboard(control.Snapshot{APIMajor: 1, ConnectionState: control.ConnectionStopped, DaemonVersion: "1.0", CoreVersion: "4.0"}, nil)
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	view := updated.(Dashboard).View().Content
+	lines := strings.Split(view, "\n")
+	if len(lines) > 24 {
+		t.Fatalf("80x24 view has %d lines:\n%s", len(lines), view)
+	}
+	for _, line := range lines {
+		if len([]rune(line)) > 80 {
+			t.Fatalf("line wider than 80 columns: %q", line)
+		}
+	}
+	for _, want := range []string{"1 Dash", "x x disconnect", "q/Ctrl+C quit"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("compact view missing %q:\n%s", want, view)
+		}
+	}
+}
+
 func TestDashboardQuitsWithoutConnectionAction(t *testing.T) {
 	model, command := NewDashboard(control.Snapshot{}, nil).Update(tea.KeyPressMsg(tea.Key{Text: "q"}))
 	if model == nil || command == nil {

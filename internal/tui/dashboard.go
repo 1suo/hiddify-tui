@@ -161,11 +161,18 @@ func (m Dashboard) View() tea.View {
 	if m.action != "" {
 		content += "\n\n" + m.action
 	}
-	content += "\n\n1 Dashboard  2 Profiles  3 Outbounds  4 Logs  5 Settings\nc connect  x disconnect  r restart  ↑/↓ select  Enter activate/select  t test outbound  C clear logs\nq / Ctrl+C quit (connection stays active)"
+	content += "\n\n" + m.footer()
 
 	view := tea.NewView(content)
 	view.AltScreen = true
 	return view
+}
+
+func (m Dashboard) footer() string {
+	if m.width > 0 && m.width <= 80 {
+		return "1 Dash  2 Prof  3 Out  4 Logs  5 Set\nc connect  x x disconnect  r restart  Enter select  t test  C C clear\nq/Ctrl+C quit; connection stays active"
+	}
+	return "1 Dashboard  2 Profiles  3 Outbounds  4 Logs  5 Settings\nc connect  x disconnect  r restart  ↑/↓ select  Enter activate/select  t test outbound  C clear logs\nq / Ctrl+C quit (connection stays active)"
 }
 
 func (m Dashboard) dashboardView() string {
