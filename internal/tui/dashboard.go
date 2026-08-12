@@ -174,10 +174,17 @@ func (m Dashboard) dashboardView() string {
 		state = control.ConnectionStopped
 	}
 	profile := valueOr(m.snapshot.ActiveProfileName, "none")
-	mode := valueOr(m.snapshot.EffectiveMode, "none")
+	requestedMode := valueOr(m.snapshot.RequestedMode, "none")
+	effectiveMode := valueOr(m.snapshot.EffectiveMode, "none")
 	outbound := valueOr(m.snapshot.SelectedOutbound, "none")
+	daemonVersion := valueOr(m.snapshot.DaemonVersion, "unknown")
+	coreVersion := valueOr(m.snapshot.CoreVersion, "unknown")
 
-	return fmt.Sprintf("Hiddify\n\nConnection  %s\nProfile     %s\nMode        %s\nOutbound    %s\n\nDown        %s/s\nUp          %s/s\nTotal       %s down / %s up\nConnections %d\nMemory      %s\nAgent       %s", state, profile, mode, outbound, formatBytes(m.snapshot.Traffic.DownlinkBytesPerSecond), formatBytes(m.snapshot.Traffic.UplinkBytesPerSecond), formatBytes(m.snapshot.Traffic.TotalDownloadBytes), formatBytes(m.snapshot.Traffic.TotalUploadBytes), m.snapshot.System.ConnectionCount, formatBytes(m.snapshot.System.MemoryBytes), agentStatus(m.snapshot.Agent))
+	content := fmt.Sprintf("Hiddify\n\nConnection  %s\nProfile     %s\nRequested   %s\nEffective   %s\nOutbound    %s\n\nDown        %s/s\nUp          %s/s\nTotal       %s down / %s up\nConnections %d\nMemory      %s\nAgent       %s\nDaemon      %s (API %d.%d)\nCore        %s", state, profile, requestedMode, effectiveMode, outbound, formatBytes(m.snapshot.Traffic.DownlinkBytesPerSecond), formatBytes(m.snapshot.Traffic.UplinkBytesPerSecond), formatBytes(m.snapshot.Traffic.TotalDownloadBytes), formatBytes(m.snapshot.Traffic.TotalUploadBytes), m.snapshot.System.ConnectionCount, formatBytes(m.snapshot.System.MemoryBytes), agentStatus(m.snapshot.Agent), daemonVersion, m.snapshot.APIMajor, m.snapshot.APIMinor, coreVersion)
+	if m.snapshot.LastError != "" {
+		content += "\n\nLast warning\n" + m.snapshot.LastError
+	}
+	return content
 }
 
 func (m Dashboard) profilesView() string {
