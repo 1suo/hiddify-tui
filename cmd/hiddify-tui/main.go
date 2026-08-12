@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -58,6 +59,67 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	remaining := flags.Args()
+	if len(remaining) >= 2 && remaining[0] == "settings" {
+		command := remaining[1]
+		includeSecrets := false
+		var candidate []byte
+		switch command {
+		case "show":
+			if len(remaining) != 2 {
+				return settingsUsage(stderr)
+			}
+		case "validate", "set", "import":
+			if len(remaining) != 3 {
+				return settingsUsage(stderr)
+			}
+			data, err := os.ReadFile(remaining[2])
+			if err != nil || !json.Valid(data) {
+				if err != nil {
+					fmt.Fprintf(stderr, "settings %s: %v\n", command, err)
+				} else {
+					fmt.Fprintf(stderr, "settings %s: input is not valid JSON\n", command)
+				}
+				return cli.ExitUsage
+			}
+			candidate = data
+		case "reset":
+			if len(remaining) != 3 || remaining[2] != "--yes" {
+				fmt.Fprintln(stderr, "settings reset requires --yes")
+				return cli.ExitUsage
+			}
+		case "export":
+			if len(remaining) == 2 {
+				break
+			}
+			if len(remaining) == 4 && remaining[2] == "--include-secrets" && remaining[3] == "--yes" {
+				includeSecrets = true
+				break
+			}
+			return settingsUsage(stderr)
+		default:
+			return settingsUsage(stderr)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+		daemon, err := client.DialUnix(ctx, *socket)
+		cancel()
+		if err != nil {
+			fmt.Fprintf(stderr, "settings: %v\n", err)
+			return cli.ExitUnavailable
+		}
+		defer daemon.Close()
+		ctx, cancel = context.WithTimeout(context.Background(), *timeout)
+		defer cancel()
+		switch command {
+		case "show":
+			return cli.SettingsShow(ctx, daemon, stdout, stderr)
+		case "validate":
+			return cli.SettingsValidate(ctx, daemon, candidate, stdout, stderr)
+		case "set", "import", "reset":
+			return cli.SettingsWrite(ctx, daemon, command, candidate, stdout, stderr)
+		default:
+			return cli.SettingsExport(ctx, daemon, includeSecrets, stdout, stderr)
+		}
+	}
 	if len(remaining) >= 1 && remaining[0] == "logs" {
 		logFlags := flag.NewFlagSet("logs", flag.ContinueOnError)
 		logFlags.SetOutput(stderr)
@@ -249,6 +311,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cli.ExitUsage
 	}
 	fmt.Fprintln(stderr, "usage: hiddify-tui [--json] status")
+	return cli.ExitUsage
+}
+
+func settingsUsage(stderr io.Writer) int {
+	fmt.Fprintln(stderr, "usage: hiddify-tui settings show|validate FILE|set FILE|import FILE|reset --yes|export [--include-secrets --yes]")
 	return cli.ExitUsage
 }
 

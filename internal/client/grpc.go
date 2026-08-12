@@ -275,6 +275,62 @@ func (c *GRPCClient) ClearLogs(ctx context.Context) error {
 	return nil
 }
 
+func (c *GRPCClient) GetSettings(ctx context.Context) (control.Settings, error) {
+	response, err := c.api.GetSettings(ctx, &controlv1.GetSettingsRequest{})
+	if err != nil {
+		return control.Settings{}, fmt.Errorf("get settings: %w", err)
+	}
+	return settingsFromProto(response), nil
+}
+
+func (c *GRPCClient) ValidateSettings(ctx context.Context, candidate []byte) (control.ValidationResult, error) {
+	response, err := c.api.ValidateSettings(ctx, &controlv1.ValidateSettingsRequest{CandidateJson: candidate})
+	if err != nil {
+		return control.ValidationResult{}, fmt.Errorf("validate settings: %w", err)
+	}
+	errors := make([]control.FieldError, 0, len(response.GetErrors()))
+	for _, fieldError := range response.GetErrors() {
+		errors = append(errors, control.FieldError{Field: fieldError.GetField(), Message: fieldError.GetMessage()})
+	}
+	return control.ValidationResult{Valid: response.GetValid(), Errors: errors}, nil
+}
+
+func (c *GRPCClient) UpdateSettings(ctx context.Context, candidate []byte) (control.Settings, error) {
+	response, err := c.api.UpdateSettings(ctx, &controlv1.UpdateSettingsRequest{CandidateJson: candidate})
+	if err != nil {
+		return control.Settings{}, fmt.Errorf("update settings: %w", err)
+	}
+	return settingsFromProto(response), nil
+}
+
+func (c *GRPCClient) ResetSettings(ctx context.Context) (control.Settings, error) {
+	response, err := c.api.ResetSettings(ctx, &controlv1.ResetSettingsRequest{})
+	if err != nil {
+		return control.Settings{}, fmt.Errorf("reset settings: %w", err)
+	}
+	return settingsFromProto(response), nil
+}
+
+func (c *GRPCClient) ExportSettings(ctx context.Context, includeSecrets bool) ([]byte, error) {
+	response, err := c.api.ExportSettings(ctx, &controlv1.ExportSettingsRequest{IncludeSecrets: includeSecrets})
+	if err != nil {
+		return nil, fmt.Errorf("export settings: %w", err)
+	}
+	return response.GetJson(), nil
+}
+
+func (c *GRPCClient) ImportSettings(ctx context.Context, candidate []byte) (control.Settings, error) {
+	response, err := c.api.ImportSettings(ctx, &controlv1.ImportSettingsRequest{Json: candidate})
+	if err != nil {
+		return control.Settings{}, fmt.Errorf("import settings: %w", err)
+	}
+	return settingsFromProto(response), nil
+}
+
+func settingsFromProto(settings *controlv1.Settings) control.Settings {
+	return control.Settings{RedactedJSON: append([]byte(nil), settings.GetRedactedJson()...)}
+}
+
 func profileFromProto(profile *controlv1.Profile) control.Profile {
 	return control.Profile{
 		ID:                    profile.GetId(),
@@ -426,4 +482,5 @@ var _ control.ProfileWriter = (*GRPCClient)(nil)
 var _ control.LocalProfileWriter = (*GRPCClient)(nil)
 var _ control.OutboundOperator = (*GRPCClient)(nil)
 var _ control.LogReader = (*GRPCClient)(nil)
+var _ control.SettingsOperator = (*GRPCClient)(nil)
 var _ io.Closer = (*GRPCClient)(nil)

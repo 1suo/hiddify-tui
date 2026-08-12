@@ -5,6 +5,7 @@ package control
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 )
@@ -209,6 +210,29 @@ type LogEntry struct {
 type LogReader interface {
 	TailLogs(context.Context, uint32, LogLevel, bool) (<-chan LogEntry, error)
 	ClearLogs(context.Context) error
+}
+
+type Settings struct {
+	RedactedJSON json.RawMessage `json:"settings"`
+}
+
+type FieldError struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
+}
+
+type ValidationResult struct {
+	Valid  bool         `json:"valid"`
+	Errors []FieldError `json:"errors,omitempty"`
+}
+
+type SettingsOperator interface {
+	GetSettings(context.Context) (Settings, error)
+	ValidateSettings(context.Context, []byte) (ValidationResult, error)
+	UpdateSettings(context.Context, []byte) (Settings, error)
+	ResetSettings(context.Context) (Settings, error)
+	ExportSettings(context.Context, bool) ([]byte, error)
+	ImportSettings(context.Context, []byte) (Settings, error)
 }
 
 func (s Snapshot) ValidateCompatibility() error {

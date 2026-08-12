@@ -29,6 +29,7 @@ type testControlServer struct {
 	testScope *controlv1.TestOutboundsRequest
 	logs      []*controlv1.LogEntry
 	cleared   bool
+	settings  []byte
 }
 
 func (s *testControlServer) Connect(_ context.Context, request *controlv1.ConnectRequest) (*controlv1.OperationResult, error) {
@@ -70,6 +71,36 @@ func (s *testControlServer) TailLogs(_ *controlv1.TailLogsRequest, stream grpc.S
 func (s *testControlServer) ClearLogs(context.Context, *controlv1.ClearLogsRequest) (*controlv1.OperationResult, error) {
 	s.cleared = true
 	return &controlv1.OperationResult{}, nil
+}
+
+func (s *testControlServer) GetSettings(context.Context, *controlv1.GetSettingsRequest) (*controlv1.Settings, error) {
+	return &controlv1.Settings{RedactedJson: s.settings}, nil
+}
+
+func (s *testControlServer) ValidateSettings(_ context.Context, request *controlv1.ValidateSettingsRequest) (*controlv1.ValidationResult, error) {
+	return &controlv1.ValidationResult{Valid: string(request.GetCandidateJson()) == "{}"}, nil
+}
+
+func (s *testControlServer) UpdateSettings(_ context.Context, request *controlv1.UpdateSettingsRequest) (*controlv1.Settings, error) {
+	s.settings = request.GetCandidateJson()
+	return &controlv1.Settings{RedactedJson: s.settings}, nil
+}
+
+func (s *testControlServer) ResetSettings(context.Context, *controlv1.ResetSettingsRequest) (*controlv1.Settings, error) {
+	s.settings = []byte(`{}`)
+	return &controlv1.Settings{RedactedJson: s.settings}, nil
+}
+
+func (s *testControlServer) ExportSettings(_ context.Context, request *controlv1.ExportSettingsRequest) (*controlv1.ExportSettingsResponse, error) {
+	if request.GetIncludeSecrets() {
+		return &controlv1.ExportSettingsResponse{Json: []byte(`{"secret":true}`)}, nil
+	}
+	return &controlv1.ExportSettingsResponse{Json: s.settings}, nil
+}
+
+func (s *testControlServer) ImportSettings(_ context.Context, request *controlv1.ImportSettingsRequest) (*controlv1.Settings, error) {
+	s.settings = request.GetJson()
+	return &controlv1.Settings{RedactedJson: s.settings}, nil
 }
 
 func (s *testControlServer) AddLocalProfile(stream grpc.ClientStreamingServer[controlv1.AddLocalProfileRequest, controlv1.Profile]) error {
@@ -154,6 +185,7 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 		profiles: []*controlv1.Profile{{Id: "p-1", Name: "Home", Kind: controlv1.ProfileKind_PROFILE_KIND_REMOTE, RedactedUrl: "https://example.test/…"}},
 		groups:   []*controlv1.OutboundGroup{{Id: "g-1", Name: "Auto", SelectedOutboundId: "o-1", Outbounds: []*controlv1.Outbound{{Id: "o-1", Tag: "Fast", Selectable: true, DelayMillis: 42}}}},
 		logs:     []*controlv1.LogEntry{{Sequence: 1, Level: controlv1.LogLevel_LOG_LEVEL_WARN, Component: "core", Message: "redacted"}},
+		settings: []byte(`{"mode":"tun"}`),
 	}
 	socket := startUnixServer(t, server)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -201,5 +233,17 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 	}
 	if err := daemon.ClearLogs(ctx); err != nil || !server.cleared {
 		t.Fatalf("clear logs err=%v cleared=%v", err, server.cleared)
+	}
+	settings, err := daemon.GetSettings(ctx)
+	if err != nil || string(settings.RedactedJSON) != `{"mode":"tun"}` {
+		t.Fatalf("settings=%#v err=%v", settings, err)
+	}
+	validation, err := daemon.ValidateSettings(ctx, []byte(`{}`))
+	if err != nil || !validation.Valid {
+		t.Fatalf("validation=%#v err=%v", validation, err)
+	}
+	settings, err = daemon.UpdateSettings(ctx, []byte(`{"mode":"local-proxy"}`))
+	if err != nil || string(settings.RedactedJSON) != `{"mode":"local-proxy"}` {
+		t.Fatalf("updated=%#v err=%v", settings, err)
 	}
 }
