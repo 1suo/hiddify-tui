@@ -202,6 +202,18 @@ func TestDashboardRendersAndConfirmsLogClear(t *testing.T) {
 	}
 }
 
+func TestDashboardRendersRedactedSettings(t *testing.T) {
+	model := NewDashboard(control.Snapshot{}, nil)
+	model.page = pageSettings
+	model.settings = control.Settings{RedactedJSON: []byte(`{"mode":"tun","token":"[redacted]"}`)}
+	view := model.View().Content
+	for _, want := range []string{"Settings (redacted)", `"mode": "tun"`, `"token": "[redacted]"`, "settings validate|set|import|export"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("settings view missing %q:\n%s", want, view)
+		}
+	}
+}
+
 type recordingLogReader struct{ clears int }
 
 func (r *recordingLogReader) TailLogs(context.Context, uint32, control.LogLevel, bool) (<-chan control.LogEntry, error) {

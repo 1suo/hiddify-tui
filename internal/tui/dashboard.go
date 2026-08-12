@@ -2,7 +2,9 @@
 package tui
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -26,6 +28,7 @@ type Dashboard struct {
 	profiles          []control.Profile
 	groups            []control.OutboundGroup
 	logs              []control.LogEntry
+	settings          control.Settings
 	connection        control.ConnectionOperator
 	profilesAPI       control.ProfileWriter
 	outboundsAPI      control.OutboundOperator
@@ -53,6 +56,7 @@ type dashboardUpdate struct {
 	profiles []control.Profile
 	groups   []control.OutboundGroup
 	logs     []control.LogEntry
+	settings control.Settings
 }
 
 type actionResult struct {
@@ -125,7 +129,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case dashboardUpdate:
-		m.snapshot, m.err, m.profiles, m.groups, m.logs = msg.snapshot, msg.err, msg.profiles, msg.groups, msg.logs
+		m.snapshot, m.err, m.profiles, m.groups, m.logs, m.settings = msg.snapshot, msg.err, msg.profiles, msg.groups, msg.logs, msg.settings
 		return m, waitForDashboardUpdate(m.updates)
 	case actionResult:
 		if msg.err != nil {
@@ -147,7 +151,7 @@ func (m Dashboard) View() tea.View {
 	case pageLogs:
 		content = m.logsView()
 	case pageSettings:
-		content = "Settings\n\nUse hiddify-tui settings show|validate|set|import|export.\nSettings changes are validated and committed by the daemon."
+		content = m.settingsView()
 	default:
 		content = m.dashboardView()
 	}
@@ -233,6 +237,17 @@ func (m Dashboard) logsView() string {
 		content += fmt.Sprintf("\n%s %-5s %-12s %s", timestamp, entry.Level, entry.Component, entry.Message)
 	}
 	return content
+}
+
+func (m Dashboard) settingsView() string {
+	if len(m.settings.RedactedJSON) == 0 {
+		return "Settings\n\nNo settings document received from the daemon."
+	}
+	var formatted bytes.Buffer
+	if err := json.Indent(&formatted, m.settings.RedactedJSON, "", "  "); err != nil {
+		return "Settings\n\nDaemon returned invalid redacted JSON."
+	}
+	return "Settings (redacted)\n\n" + formatted.String() + "\n\nUse hiddify-tui settings validate|set|import|export for explicit file-based changes."
 }
 
 // Run opens the alternate-screen dashboard. Ctrl+C is a normal detach.
@@ -380,6 +395,9 @@ func streamDashboard(ctx context.Context, daemon control.Client, watcher control
 			}
 			if reader, ok := daemon.(control.LogReader); ok {
 				update.logs = loadLogTail(ctx, reader)
+			}
+			if operator, ok := daemon.(control.SettingsOperator); ok {
+				update.settings, _ = operator.GetSettings(ctx)
 			}
 			sendDashboardUpdate(ctx, updates, update)
 			err = state.Watch(ctx, daemon, watcher)
