@@ -10,11 +10,21 @@ import (
 	"github.com/1suo/hiddify-tui/internal/cli"
 	"github.com/1suo/hiddify-tui/internal/client"
 	"github.com/1suo/hiddify-tui/internal/control"
+	"github.com/1suo/hiddify-tui/internal/tui"
+	"github.com/charmbracelet/x/term"
 )
 
 const version = "0.1.0-dev"
 
 func main() {
+	if len(os.Args) == 1 && term.IsTerminal(os.Stdin.Fd()) && term.IsTerminal(os.Stdout.Fd()) {
+		snapshot, err := client.Snapshot(context.Background(), unavailableControl{})
+		if err := tui.Run(snapshot, err); err != nil {
+			fmt.Fprintf(os.Stderr, "tui: %v\n", err)
+			os.Exit(cli.ExitRejected)
+		}
+		return
+	}
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 

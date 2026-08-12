@@ -10,7 +10,8 @@ This repository currently contains the first client-side foundation:
 - a versioned protobuf control API draft in `proto/control/v1`;
 - transport-neutral snapshot/client contracts and deterministic fake server;
 - stable `status` formatting and JSON/exit-code tests;
-- a dependency-free dashboard renderer, ready for Bubble Tea integration.
+- an alternate-screen Bubble Tea v2 dashboard, opened by running
+  `hiddify-tui` from a terminal.
 
 There is no daemon transport yet. Consequently, `hiddify-tui status` correctly
 returns exit code `3` until the upstream daemon is available.
