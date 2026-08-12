@@ -62,6 +62,9 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 			EventSequence:     4,
 			ConnectionState:   controlv1.ConnectionState_CONNECTION_STATE_STARTED,
 			ActiveProfileName: "Home",
+			Traffic:           &controlv1.TrafficStats{DownlinkBytesPerSecond: 2048},
+			System:            &controlv1.SystemStats{ConnectionCount: 2},
+			Agent:             &controlv1.AgentHealth{Required: true, Connected: true},
 		},
 		events: []*controlv1.Event{{
 			Sequence: 5,
@@ -84,7 +87,7 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 	if err := state.Watch(ctx, daemon, daemon); err != nil {
 		t.Fatal(err)
 	}
-	if state.Snapshot.ConnectionState != control.ConnectionStarted || state.Snapshot.SelectedOutbound != "fast" || state.LastSequence != 5 {
+	if state.Snapshot.ConnectionState != control.ConnectionStarted || state.Snapshot.SelectedOutbound != "fast" || state.LastSequence != 5 || state.Snapshot.Traffic.DownlinkBytesPerSecond != 2048 || state.Snapshot.System.ConnectionCount != 2 || !state.Snapshot.Agent.Connected {
 		t.Fatalf("unexpected recovered state: %#v", state)
 	}
 }

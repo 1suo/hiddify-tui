@@ -4,6 +4,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"strconv"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -48,7 +49,7 @@ func (m Dashboard) View() tea.View {
 	mode := valueOr(m.snapshot.EffectiveMode, "none")
 	outbound := valueOr(m.snapshot.SelectedOutbound, "none")
 
-	content := fmt.Sprintf("Hiddify\n\nConnection  %s\nProfile     %s\nMode        %s\nOutbound    %s", state, profile, mode, outbound)
+	content := fmt.Sprintf("Hiddify\n\nConnection  %s\nProfile     %s\nMode        %s\nOutbound    %s\n\nDown        %s/s\nUp          %s/s\nTotal       %s down / %s up\nConnections %d\nMemory      %s\nAgent       %s", state, profile, mode, outbound, formatBytes(m.snapshot.Traffic.DownlinkBytesPerSecond), formatBytes(m.snapshot.Traffic.UplinkBytesPerSecond), formatBytes(m.snapshot.Traffic.TotalDownloadBytes), formatBytes(m.snapshot.Traffic.TotalUploadBytes), m.snapshot.System.ConnectionCount, formatBytes(m.snapshot.System.MemoryBytes), agentStatus(m.snapshot.Agent))
 	if m.err != nil {
 		content += fmt.Sprintf("\n\nDaemon unavailable\n%s", m.err)
 	}
@@ -73,4 +74,31 @@ func valueOr(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func agentStatus(agent control.AgentHealth) string {
+	if !agent.Required {
+		return "not required"
+	}
+	if agent.Connected {
+		return "connected"
+	}
+	if agent.LastError != "" {
+		return "unavailable: " + agent.LastError
+	}
+	return "unavailable"
+}
+
+func formatBytes(value uint64) string {
+	units := []string{"B", "KiB", "MiB", "GiB", "TiB"}
+	amount := float64(value)
+	unit := 0
+	for amount >= 1024 && unit < len(units)-1 {
+		amount /= 1024
+		unit++
+	}
+	if unit == 0 {
+		return strconv.FormatUint(value, 10) + " " + units[unit]
+	}
+	return fmt.Sprintf("%.1f %s", amount, units[unit])
 }

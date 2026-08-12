@@ -93,6 +93,22 @@ func snapshotFromProto(snapshot *controlv1.Snapshot) control.Snapshot {
 		EffectiveMode:     snapshot.GetEffectiveMode(),
 		SelectedOutbound:  snapshot.GetSelectedOutbound(),
 		LastError:         snapshot.GetLastError(),
+		Traffic: control.TrafficStats{
+			UplinkBytesPerSecond:   snapshot.GetTraffic().GetUplinkBytesPerSecond(),
+			DownlinkBytesPerSecond: snapshot.GetTraffic().GetDownlinkBytesPerSecond(),
+			TotalUploadBytes:       snapshot.GetTraffic().GetTotalUploadBytes(),
+			TotalDownloadBytes:     snapshot.GetTraffic().GetTotalDownloadBytes(),
+		},
+		System: control.SystemStats{
+			MemoryBytes:     snapshot.GetSystem().GetMemoryBytes(),
+			ConnectionCount: snapshot.GetSystem().GetConnectionCount(),
+		},
+		Agent: control.AgentHealth{
+			Required:  snapshot.GetAgent().GetRequired(),
+			Connected: snapshot.GetAgent().GetConnected(),
+			LastError: snapshot.GetAgent().GetLastError(),
+		},
+		Capabilities: snapshot.GetCapabilities(),
 	}
 }
 

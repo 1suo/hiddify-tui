@@ -36,6 +36,28 @@ type Snapshot struct {
 	EffectiveMode     string          `json:"effective_mode,omitempty"`
 	SelectedOutbound  string          `json:"selected_outbound,omitempty"`
 	LastError         string          `json:"last_error,omitempty"`
+	Traffic           TrafficStats    `json:"traffic"`
+	System            SystemStats     `json:"system"`
+	Agent             AgentHealth     `json:"agent"`
+	Capabilities      []string        `json:"capabilities,omitempty"`
+}
+
+type TrafficStats struct {
+	UplinkBytesPerSecond   uint64 `json:"uplink_bytes_per_second"`
+	DownlinkBytesPerSecond uint64 `json:"downlink_bytes_per_second"`
+	TotalUploadBytes       uint64 `json:"total_upload_bytes"`
+	TotalDownloadBytes     uint64 `json:"total_download_bytes"`
+}
+
+type SystemStats struct {
+	MemoryBytes     uint64 `json:"memory_bytes"`
+	ConnectionCount uint32 `json:"connection_count"`
+}
+
+type AgentHealth struct {
+	Required  bool   `json:"required"`
+	Connected bool   `json:"connected"`
+	LastError string `json:"last_error,omitempty"`
 }
 
 // EventKind identifies the part of the snapshot changed by an event.

@@ -2,6 +2,7 @@ package client_test
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -19,7 +20,7 @@ func TestSnapshotRejectsIncompatibleMajor(t *testing.T) {
 func TestSnapshotReturnsCompatibleResponse(t *testing.T) {
 	want := control.Snapshot{APIMajor: 1, ConnectionState: control.ConnectionStarted}
 	got, err := client.Snapshot(context.Background(), client.FakeControl{Snapshot: want})
-	if err != nil || got != want {
+	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("Snapshot() = %#v, %v; want %#v, nil", got, err, want)
 	}
 }
