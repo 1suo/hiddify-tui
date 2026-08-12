@@ -57,14 +57,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	remaining := flags.Args()
-	if len(remaining) == 1 && remaining[0] == "status" {
+	if len(remaining) >= 1 && remaining[0] == "status" {
+		watch := len(remaining) == 2 && remaining[1] == "--watch"
+		if len(remaining) > 1 && !watch {
+			fmt.Fprintln(stderr, "usage: hiddify-tui [--json] [--socket PATH] [--timeout DURATION] status [--watch]")
+			return cli.ExitUsage
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
-		defer cancel()
 		daemon, err := client.DialUnix(ctx, *socket)
+		cancel()
 		if err != nil {
-			return cli.Status(ctx, unavailableControl{err: err}, *jsonOutput, stdout, stderr)
+			return cli.Status(context.Background(), unavailableControl{err: err}, *jsonOutput, stdout, stderr)
 		}
 		defer daemon.Close()
+		if watch {
+			return cli.StatusWatch(context.Background(), daemon, daemon, *jsonOutput, stdout, stderr)
+		}
+		ctx, cancel = context.WithTimeout(context.Background(), *timeout)
+		defer cancel()
 		return cli.Status(ctx, daemon, *jsonOutput, stdout, stderr)
 	}
 	if len(remaining) == 0 {
