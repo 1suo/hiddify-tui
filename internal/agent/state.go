@@ -126,7 +126,8 @@ func (m *Manager) load() (Recovery, error) {
 }
 
 func (m *Manager) save(recovery Recovery) error {
-	if err := os.MkdirAll(filepath.Dir(m.path), 0700); err != nil {
+	directory := filepath.Dir(m.path)
+	if err := os.MkdirAll(directory, 0700); err != nil {
 		return err
 	}
 	data, err := json.Marshal(recovery)
@@ -134,8 +135,29 @@ func (m *Manager) save(recovery Recovery) error {
 		return err
 	}
 	temporary := m.path + ".tmp"
-	if err := os.WriteFile(temporary, data, 0600); err != nil {
+	file, err := os.OpenFile(temporary, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
 		return err
 	}
-	return os.Rename(temporary, m.path)
+	defer os.Remove(temporary)
+	if _, err := file.Write(data); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(temporary, m.path); err != nil {
+		return err
+	}
+	directoryFile, err := os.Open(directory)
+	if err != nil {
+		return err
+	}
+	defer directoryFile.Close()
+	return directoryFile.Sync()
 }

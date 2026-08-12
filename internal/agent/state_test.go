@@ -47,6 +47,24 @@ func TestApplyAndRestorePreservesOriginalState(t *testing.T) {
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("recovery file remains: %v", err)
 	}
+	if _, err := os.Stat(path + ".tmp"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("temporary recovery file remains: %v", err)
+	}
+}
+
+func TestApplyCreatesPrivateRecoveryFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "recovery.json")
+	manager := NewManager(&fakeBackend{current: ProxyState(`{"old":true}`)}, path)
+	if err := manager.Apply(context.Background(), ProxyState(`{"new":true}`), time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("recovery mode = %o", info.Mode().Perm())
+	}
 }
 
 func TestRestoreExpired(t *testing.T) {
