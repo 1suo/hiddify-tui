@@ -25,9 +25,11 @@ A Linux package must:
    `StateDirectory=` at service start.
 3. Create `/run/hiddify` with mode `0750`; systemd creates it from
    `RuntimeDirectory=` at service start.
-4. Record one designated desktop user and grant only that user access to
-   `/run/hiddify/control.sock`. Never make the socket or state directory
-   world-readable.
+4. Record one designated desktop user in `/etc/hiddify/core.env` as
+   `HIDDIFY_ALLOWED_UID=<uid>`. The service passes it to the daemon, which
+   owns the socket with mode `0600` and verifies `SO_PEERCRED` for that UID
+   (or root) before accepting local RPCs. Never make the socket or state
+   directory world-readable.
 5. Enable `hiddify-core.service` for boot. Enable
    `hiddify-agent.service` only for the designated user's session.
 6. On uninstall, ask before disconnecting, restore proxy settings through the

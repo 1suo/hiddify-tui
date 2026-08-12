@@ -7,7 +7,8 @@ ConditionPathIsExecutable=/usr/lib/hiddify/hiddify-core
 
 [Service]
 Type=simple
-ExecStart=/usr/lib/hiddify/hiddify-core daemon run --state-dir=/var/lib/hiddify --socket=/run/hiddify/control.sock
+EnvironmentFile=/etc/hiddify/core.env
+ExecStart=/usr/lib/hiddify/hiddify-core daemon run --state-dir=/var/lib/hiddify --socket=/run/hiddify/control.sock --allowed-uid=${HIDDIFY_ALLOWED_UID}
 Restart=on-failure
 RestartSec=2s
 TimeoutStopSec=20s
