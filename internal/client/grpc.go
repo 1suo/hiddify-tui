@@ -428,6 +428,7 @@ func snapshotFromProto(snapshot *controlv1.Snapshot) control.Snapshot {
 		Agent: control.AgentHealth{
 			Required:  snapshot.GetAgent().GetRequired(),
 			Connected: snapshot.GetAgent().GetConnected(),
+			Applied:   snapshot.GetAgent().GetApplied(),
 			LastError: snapshot.GetAgent().GetLastError(),
 		},
 		Capabilities: snapshot.GetCapabilities(),
@@ -453,6 +454,9 @@ func eventFromProto(event *controlv1.Event) control.Event {
 	case *controlv1.Event_Warning:
 		converted.Kind = control.EventWarning
 		converted.LastError = change.Warning.GetMessage()
+	case *controlv1.Event_Agent:
+		converted.Kind = control.EventAgent
+		converted.Agent = control.AgentHealth{Required: change.Agent.GetRequired(), Connected: change.Agent.GetConnected(), Applied: change.Agent.GetApplied(), LastError: change.Agent.GetLastError()}
 	case *controlv1.Event_ResyncRequired:
 		converted.Kind = control.EventResync
 	default:

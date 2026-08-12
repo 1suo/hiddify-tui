@@ -582,6 +582,7 @@ type Event struct {
 	//	*Event_Outbound
 	//	*Event_Warning
 	//	*Event_ResyncRequired
+	//	*Event_Agent
 	Change        isEvent_Change `protobuf_oneof:"change"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -683,6 +684,15 @@ func (x *Event) GetResyncRequired() *ResyncRequired {
 	return nil
 }
 
+func (x *Event) GetAgent() *AgentHealth {
+	if x != nil {
+		if x, ok := x.Change.(*Event_Agent); ok {
+			return x.Agent
+		}
+	}
+	return nil
+}
+
 type isEvent_Change interface {
 	isEvent_Change()
 }
@@ -707,6 +717,10 @@ type Event_ResyncRequired struct {
 	ResyncRequired *ResyncRequired `protobuf:"bytes,7,opt,name=resync_required,json=resyncRequired,proto3,oneof"`
 }
 
+type Event_Agent struct {
+	Agent *AgentHealth `protobuf:"bytes,8,opt,name=agent,proto3,oneof"`
+}
+
 func (*Event_Connection) isEvent_Change() {}
 
 func (*Event_Profile) isEvent_Change() {}
@@ -716,6 +730,8 @@ func (*Event_Outbound) isEvent_Change() {}
 func (*Event_Warning) isEvent_Change() {}
 
 func (*Event_ResyncRequired) isEvent_Change() {}
+
+func (*Event_Agent) isEvent_Change() {}
 
 type ConnectionChange struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -3228,6 +3244,7 @@ type AgentHealth struct {
 	Required      bool                   `protobuf:"varint,1,opt,name=required,proto3" json:"required,omitempty"`
 	Connected     bool                   `protobuf:"varint,2,opt,name=connected,proto3" json:"connected,omitempty"`
 	LastError     string                 `protobuf:"bytes,3,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
+	Applied       bool                   `protobuf:"varint,4,opt,name=applied,proto3" json:"applied,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3281,6 +3298,13 @@ func (x *AgentHealth) GetLastError() string {
 		return x.LastError
 	}
 	return ""
+}
+
+func (x *AgentHealth) GetApplied() bool {
+	if x != nil {
+		return x.Applied
+	}
+	return false
 }
 
 // The user-session proxy agent polls through the same OS-authorized local
@@ -3433,7 +3457,7 @@ const file_control_v1_control_proto_rawDesc = "" +
 	"\fcapabilities\x18\x11 \x03(\tR\fcapabilities\x12!\n" +
 	"\fauto_connect\x18\x12 \x01(\bR\vautoConnect\"5\n" +
 	"\fWatchRequest\x12%\n" +
-	"\x0eafter_sequence\x18\x01 \x01(\x04R\rafterSequence\"\x9a\x03\n" +
+	"\x0eafter_sequence\x18\x01 \x01(\x04R\rafterSequence\"\xd3\x03\n" +
 	"\x05Event\x12\x1a\n" +
 	"\bsequence\x18\x01 \x01(\x04R\bsequence\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\x04R\brevision\x12F\n" +
@@ -3443,7 +3467,8 @@ const file_control_v1_control_proto_rawDesc = "" +
 	"\aprofile\x18\x04 \x01(\v2!.hiddify.control.v1.ProfileChangeH\x00R\aprofile\x12@\n" +
 	"\boutbound\x18\x05 \x01(\v2\".hiddify.control.v1.OutboundChangeH\x00R\boutbound\x127\n" +
 	"\awarning\x18\x06 \x01(\v2\x1b.hiddify.control.v1.WarningH\x00R\awarning\x12M\n" +
-	"\x0fresync_required\x18\a \x01(\v2\".hiddify.control.v1.ResyncRequiredH\x00R\x0eresyncRequiredB\b\n" +
+	"\x0fresync_required\x18\a \x01(\v2\".hiddify.control.v1.ResyncRequiredH\x00R\x0eresyncRequired\x127\n" +
+	"\x05agent\x18\b \x01(\v2\x1f.hiddify.control.v1.AgentHealthH\x00R\x05agentB\b\n" +
 	"\x06change\"\x9b\x01\n" +
 	"\x10ConnectionChange\x129\n" +
 	"\x05state\x18\x01 \x01(\x0e2#.hiddify.control.v1.ConnectionStateR\x05state\x12%\n" +
@@ -3606,12 +3631,13 @@ const file_control_v1_control_proto_rawDesc = "" +
 	"\x14total_download_bytes\x18\x04 \x01(\x04R\x12totalDownloadBytes\"[\n" +
 	"\vSystemStats\x12!\n" +
 	"\fmemory_bytes\x18\x01 \x01(\x04R\vmemoryBytes\x12)\n" +
-	"\x10connection_count\x18\x02 \x01(\rR\x0fconnectionCount\"f\n" +
+	"\x10connection_count\x18\x02 \x01(\rR\x0fconnectionCount\"\x80\x01\n" +
 	"\vAgentHealth\x12\x1a\n" +
 	"\brequired\x18\x01 \x01(\bR\brequired\x12\x1c\n" +
 	"\tconnected\x18\x02 \x01(\bR\tconnected\x12\x1d\n" +
 	"\n" +
-	"last_error\x18\x03 \x01(\tR\tlastError\"K\n" +
+	"last_error\x18\x03 \x01(\tR\tlastError\x12\x18\n" +
+	"\aapplied\x18\x04 \x01(\bR\aapplied\"K\n" +
 	"\x10AgentPollRequest\x12\x18\n" +
 	"\aapplied\x18\x01 \x01(\bR\aapplied\x12\x1d\n" +
 	"\n" +
@@ -3774,79 +3800,80 @@ var file_control_v1_control_proto_depIdxs = []int32{
 	11, // 6: hiddify.control.v1.Event.outbound:type_name -> hiddify.control.v1.OutboundChange
 	12, // 7: hiddify.control.v1.Event.warning:type_name -> hiddify.control.v1.Warning
 	13, // 8: hiddify.control.v1.Event.resync_required:type_name -> hiddify.control.v1.ResyncRequired
-	4,  // 9: hiddify.control.v1.ConnectionChange.state:type_name -> hiddify.control.v1.ConnectionState
-	0,  // 10: hiddify.control.v1.ConnectRequest.mode:type_name -> hiddify.control.v1.ConnectionMode
-	3,  // 11: hiddify.control.v1.OperationResult.error_code:type_name -> hiddify.control.v1.ErrorCode
-	21, // 12: hiddify.control.v1.ListProfilesResponse.profiles:type_name -> hiddify.control.v1.Profile
-	1,  // 13: hiddify.control.v1.Profile.kind:type_name -> hiddify.control.v1.ProfileKind
-	22, // 14: hiddify.control.v1.Profile.subscription:type_name -> hiddify.control.v1.SubscriptionUsage
-	25, // 15: hiddify.control.v1.AddLocalProfileRequest.metadata:type_name -> hiddify.control.v1.LocalProfileMetadata
-	32, // 16: hiddify.control.v1.ListOutboundGroupsResponse.groups:type_name -> hiddify.control.v1.OutboundGroup
-	33, // 17: hiddify.control.v1.OutboundGroup.outbounds:type_name -> hiddify.control.v1.Outbound
-	2,  // 18: hiddify.control.v1.TailLogsRequest.minimum_level:type_name -> hiddify.control.v1.LogLevel
-	2,  // 19: hiddify.control.v1.LogEntry.level:type_name -> hiddify.control.v1.LogLevel
-	43, // 20: hiddify.control.v1.ValidationResult.errors:type_name -> hiddify.control.v1.FieldError
-	5,  // 21: hiddify.control.v1.ControlService.GetSnapshot:input_type -> hiddify.control.v1.GetSnapshotRequest
-	7,  // 22: hiddify.control.v1.ControlService.WatchEvents:input_type -> hiddify.control.v1.WatchRequest
-	14, // 23: hiddify.control.v1.ControlService.Connect:input_type -> hiddify.control.v1.ConnectRequest
-	15, // 24: hiddify.control.v1.ControlService.Disconnect:input_type -> hiddify.control.v1.DisconnectRequest
-	16, // 25: hiddify.control.v1.ControlService.Restart:input_type -> hiddify.control.v1.RestartRequest
-	18, // 26: hiddify.control.v1.ControlService.ListProfiles:input_type -> hiddify.control.v1.ListProfilesRequest
-	19, // 27: hiddify.control.v1.ControlService.GetProfile:input_type -> hiddify.control.v1.GetProfileRequest
-	23, // 28: hiddify.control.v1.ControlService.AddRemoteProfile:input_type -> hiddify.control.v1.AddRemoteProfileRequest
-	24, // 29: hiddify.control.v1.ControlService.AddLocalProfile:input_type -> hiddify.control.v1.AddLocalProfileRequest
-	26, // 30: hiddify.control.v1.ControlService.UpdateProfile:input_type -> hiddify.control.v1.UpdateProfileRequest
-	27, // 31: hiddify.control.v1.ControlService.RefreshProfile:input_type -> hiddify.control.v1.RefreshProfileRequest
-	28, // 32: hiddify.control.v1.ControlService.DeleteProfile:input_type -> hiddify.control.v1.DeleteProfileRequest
-	29, // 33: hiddify.control.v1.ControlService.SetActiveProfile:input_type -> hiddify.control.v1.SetActiveProfileRequest
-	30, // 34: hiddify.control.v1.ControlService.ListOutboundGroups:input_type -> hiddify.control.v1.ListOutboundGroupsRequest
-	34, // 35: hiddify.control.v1.ControlService.SelectOutbound:input_type -> hiddify.control.v1.SelectOutboundRequest
-	35, // 36: hiddify.control.v1.ControlService.TestOutbounds:input_type -> hiddify.control.v1.TestOutboundsRequest
-	36, // 37: hiddify.control.v1.ControlService.TailLogs:input_type -> hiddify.control.v1.TailLogsRequest
-	38, // 38: hiddify.control.v1.ControlService.ClearLogs:input_type -> hiddify.control.v1.ClearLogsRequest
-	39, // 39: hiddify.control.v1.ControlService.GetSettings:input_type -> hiddify.control.v1.GetSettingsRequest
-	41, // 40: hiddify.control.v1.ControlService.ValidateSettings:input_type -> hiddify.control.v1.ValidateSettingsRequest
-	44, // 41: hiddify.control.v1.ControlService.UpdateSettings:input_type -> hiddify.control.v1.UpdateSettingsRequest
-	45, // 42: hiddify.control.v1.ControlService.ResetSettings:input_type -> hiddify.control.v1.ResetSettingsRequest
-	46, // 43: hiddify.control.v1.ControlService.ExportSettings:input_type -> hiddify.control.v1.ExportSettingsRequest
-	48, // 44: hiddify.control.v1.ControlService.ImportSettings:input_type -> hiddify.control.v1.ImportSettingsRequest
-	49, // 45: hiddify.control.v1.ControlService.GetServiceInfo:input_type -> hiddify.control.v1.GetServiceInfoRequest
-	51, // 46: hiddify.control.v1.ControlService.SetAutoConnect:input_type -> hiddify.control.v1.SetAutoConnectRequest
-	52, // 47: hiddify.control.v1.ControlService.GetDiagnostics:input_type -> hiddify.control.v1.GetDiagnosticsRequest
-	57, // 48: hiddify.control.v1.ControlService.PollAgent:input_type -> hiddify.control.v1.AgentPollRequest
-	6,  // 49: hiddify.control.v1.ControlService.GetSnapshot:output_type -> hiddify.control.v1.Snapshot
-	8,  // 50: hiddify.control.v1.ControlService.WatchEvents:output_type -> hiddify.control.v1.Event
-	17, // 51: hiddify.control.v1.ControlService.Connect:output_type -> hiddify.control.v1.OperationResult
-	17, // 52: hiddify.control.v1.ControlService.Disconnect:output_type -> hiddify.control.v1.OperationResult
-	17, // 53: hiddify.control.v1.ControlService.Restart:output_type -> hiddify.control.v1.OperationResult
-	20, // 54: hiddify.control.v1.ControlService.ListProfiles:output_type -> hiddify.control.v1.ListProfilesResponse
-	21, // 55: hiddify.control.v1.ControlService.GetProfile:output_type -> hiddify.control.v1.Profile
-	21, // 56: hiddify.control.v1.ControlService.AddRemoteProfile:output_type -> hiddify.control.v1.Profile
-	21, // 57: hiddify.control.v1.ControlService.AddLocalProfile:output_type -> hiddify.control.v1.Profile
-	21, // 58: hiddify.control.v1.ControlService.UpdateProfile:output_type -> hiddify.control.v1.Profile
-	17, // 59: hiddify.control.v1.ControlService.RefreshProfile:output_type -> hiddify.control.v1.OperationResult
-	17, // 60: hiddify.control.v1.ControlService.DeleteProfile:output_type -> hiddify.control.v1.OperationResult
-	17, // 61: hiddify.control.v1.ControlService.SetActiveProfile:output_type -> hiddify.control.v1.OperationResult
-	31, // 62: hiddify.control.v1.ControlService.ListOutboundGroups:output_type -> hiddify.control.v1.ListOutboundGroupsResponse
-	17, // 63: hiddify.control.v1.ControlService.SelectOutbound:output_type -> hiddify.control.v1.OperationResult
-	17, // 64: hiddify.control.v1.ControlService.TestOutbounds:output_type -> hiddify.control.v1.OperationResult
-	37, // 65: hiddify.control.v1.ControlService.TailLogs:output_type -> hiddify.control.v1.LogEntry
-	17, // 66: hiddify.control.v1.ControlService.ClearLogs:output_type -> hiddify.control.v1.OperationResult
-	40, // 67: hiddify.control.v1.ControlService.GetSettings:output_type -> hiddify.control.v1.Settings
-	42, // 68: hiddify.control.v1.ControlService.ValidateSettings:output_type -> hiddify.control.v1.ValidationResult
-	40, // 69: hiddify.control.v1.ControlService.UpdateSettings:output_type -> hiddify.control.v1.Settings
-	40, // 70: hiddify.control.v1.ControlService.ResetSettings:output_type -> hiddify.control.v1.Settings
-	47, // 71: hiddify.control.v1.ControlService.ExportSettings:output_type -> hiddify.control.v1.ExportSettingsResponse
-	40, // 72: hiddify.control.v1.ControlService.ImportSettings:output_type -> hiddify.control.v1.Settings
-	50, // 73: hiddify.control.v1.ControlService.GetServiceInfo:output_type -> hiddify.control.v1.ServiceInfo
-	17, // 74: hiddify.control.v1.ControlService.SetAutoConnect:output_type -> hiddify.control.v1.OperationResult
-	53, // 75: hiddify.control.v1.ControlService.GetDiagnostics:output_type -> hiddify.control.v1.Diagnostics
-	58, // 76: hiddify.control.v1.ControlService.PollAgent:output_type -> hiddify.control.v1.AgentInstruction
-	49, // [49:77] is the sub-list for method output_type
-	21, // [21:49] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	56, // 9: hiddify.control.v1.Event.agent:type_name -> hiddify.control.v1.AgentHealth
+	4,  // 10: hiddify.control.v1.ConnectionChange.state:type_name -> hiddify.control.v1.ConnectionState
+	0,  // 11: hiddify.control.v1.ConnectRequest.mode:type_name -> hiddify.control.v1.ConnectionMode
+	3,  // 12: hiddify.control.v1.OperationResult.error_code:type_name -> hiddify.control.v1.ErrorCode
+	21, // 13: hiddify.control.v1.ListProfilesResponse.profiles:type_name -> hiddify.control.v1.Profile
+	1,  // 14: hiddify.control.v1.Profile.kind:type_name -> hiddify.control.v1.ProfileKind
+	22, // 15: hiddify.control.v1.Profile.subscription:type_name -> hiddify.control.v1.SubscriptionUsage
+	25, // 16: hiddify.control.v1.AddLocalProfileRequest.metadata:type_name -> hiddify.control.v1.LocalProfileMetadata
+	32, // 17: hiddify.control.v1.ListOutboundGroupsResponse.groups:type_name -> hiddify.control.v1.OutboundGroup
+	33, // 18: hiddify.control.v1.OutboundGroup.outbounds:type_name -> hiddify.control.v1.Outbound
+	2,  // 19: hiddify.control.v1.TailLogsRequest.minimum_level:type_name -> hiddify.control.v1.LogLevel
+	2,  // 20: hiddify.control.v1.LogEntry.level:type_name -> hiddify.control.v1.LogLevel
+	43, // 21: hiddify.control.v1.ValidationResult.errors:type_name -> hiddify.control.v1.FieldError
+	5,  // 22: hiddify.control.v1.ControlService.GetSnapshot:input_type -> hiddify.control.v1.GetSnapshotRequest
+	7,  // 23: hiddify.control.v1.ControlService.WatchEvents:input_type -> hiddify.control.v1.WatchRequest
+	14, // 24: hiddify.control.v1.ControlService.Connect:input_type -> hiddify.control.v1.ConnectRequest
+	15, // 25: hiddify.control.v1.ControlService.Disconnect:input_type -> hiddify.control.v1.DisconnectRequest
+	16, // 26: hiddify.control.v1.ControlService.Restart:input_type -> hiddify.control.v1.RestartRequest
+	18, // 27: hiddify.control.v1.ControlService.ListProfiles:input_type -> hiddify.control.v1.ListProfilesRequest
+	19, // 28: hiddify.control.v1.ControlService.GetProfile:input_type -> hiddify.control.v1.GetProfileRequest
+	23, // 29: hiddify.control.v1.ControlService.AddRemoteProfile:input_type -> hiddify.control.v1.AddRemoteProfileRequest
+	24, // 30: hiddify.control.v1.ControlService.AddLocalProfile:input_type -> hiddify.control.v1.AddLocalProfileRequest
+	26, // 31: hiddify.control.v1.ControlService.UpdateProfile:input_type -> hiddify.control.v1.UpdateProfileRequest
+	27, // 32: hiddify.control.v1.ControlService.RefreshProfile:input_type -> hiddify.control.v1.RefreshProfileRequest
+	28, // 33: hiddify.control.v1.ControlService.DeleteProfile:input_type -> hiddify.control.v1.DeleteProfileRequest
+	29, // 34: hiddify.control.v1.ControlService.SetActiveProfile:input_type -> hiddify.control.v1.SetActiveProfileRequest
+	30, // 35: hiddify.control.v1.ControlService.ListOutboundGroups:input_type -> hiddify.control.v1.ListOutboundGroupsRequest
+	34, // 36: hiddify.control.v1.ControlService.SelectOutbound:input_type -> hiddify.control.v1.SelectOutboundRequest
+	35, // 37: hiddify.control.v1.ControlService.TestOutbounds:input_type -> hiddify.control.v1.TestOutboundsRequest
+	36, // 38: hiddify.control.v1.ControlService.TailLogs:input_type -> hiddify.control.v1.TailLogsRequest
+	38, // 39: hiddify.control.v1.ControlService.ClearLogs:input_type -> hiddify.control.v1.ClearLogsRequest
+	39, // 40: hiddify.control.v1.ControlService.GetSettings:input_type -> hiddify.control.v1.GetSettingsRequest
+	41, // 41: hiddify.control.v1.ControlService.ValidateSettings:input_type -> hiddify.control.v1.ValidateSettingsRequest
+	44, // 42: hiddify.control.v1.ControlService.UpdateSettings:input_type -> hiddify.control.v1.UpdateSettingsRequest
+	45, // 43: hiddify.control.v1.ControlService.ResetSettings:input_type -> hiddify.control.v1.ResetSettingsRequest
+	46, // 44: hiddify.control.v1.ControlService.ExportSettings:input_type -> hiddify.control.v1.ExportSettingsRequest
+	48, // 45: hiddify.control.v1.ControlService.ImportSettings:input_type -> hiddify.control.v1.ImportSettingsRequest
+	49, // 46: hiddify.control.v1.ControlService.GetServiceInfo:input_type -> hiddify.control.v1.GetServiceInfoRequest
+	51, // 47: hiddify.control.v1.ControlService.SetAutoConnect:input_type -> hiddify.control.v1.SetAutoConnectRequest
+	52, // 48: hiddify.control.v1.ControlService.GetDiagnostics:input_type -> hiddify.control.v1.GetDiagnosticsRequest
+	57, // 49: hiddify.control.v1.ControlService.PollAgent:input_type -> hiddify.control.v1.AgentPollRequest
+	6,  // 50: hiddify.control.v1.ControlService.GetSnapshot:output_type -> hiddify.control.v1.Snapshot
+	8,  // 51: hiddify.control.v1.ControlService.WatchEvents:output_type -> hiddify.control.v1.Event
+	17, // 52: hiddify.control.v1.ControlService.Connect:output_type -> hiddify.control.v1.OperationResult
+	17, // 53: hiddify.control.v1.ControlService.Disconnect:output_type -> hiddify.control.v1.OperationResult
+	17, // 54: hiddify.control.v1.ControlService.Restart:output_type -> hiddify.control.v1.OperationResult
+	20, // 55: hiddify.control.v1.ControlService.ListProfiles:output_type -> hiddify.control.v1.ListProfilesResponse
+	21, // 56: hiddify.control.v1.ControlService.GetProfile:output_type -> hiddify.control.v1.Profile
+	21, // 57: hiddify.control.v1.ControlService.AddRemoteProfile:output_type -> hiddify.control.v1.Profile
+	21, // 58: hiddify.control.v1.ControlService.AddLocalProfile:output_type -> hiddify.control.v1.Profile
+	21, // 59: hiddify.control.v1.ControlService.UpdateProfile:output_type -> hiddify.control.v1.Profile
+	17, // 60: hiddify.control.v1.ControlService.RefreshProfile:output_type -> hiddify.control.v1.OperationResult
+	17, // 61: hiddify.control.v1.ControlService.DeleteProfile:output_type -> hiddify.control.v1.OperationResult
+	17, // 62: hiddify.control.v1.ControlService.SetActiveProfile:output_type -> hiddify.control.v1.OperationResult
+	31, // 63: hiddify.control.v1.ControlService.ListOutboundGroups:output_type -> hiddify.control.v1.ListOutboundGroupsResponse
+	17, // 64: hiddify.control.v1.ControlService.SelectOutbound:output_type -> hiddify.control.v1.OperationResult
+	17, // 65: hiddify.control.v1.ControlService.TestOutbounds:output_type -> hiddify.control.v1.OperationResult
+	37, // 66: hiddify.control.v1.ControlService.TailLogs:output_type -> hiddify.control.v1.LogEntry
+	17, // 67: hiddify.control.v1.ControlService.ClearLogs:output_type -> hiddify.control.v1.OperationResult
+	40, // 68: hiddify.control.v1.ControlService.GetSettings:output_type -> hiddify.control.v1.Settings
+	42, // 69: hiddify.control.v1.ControlService.ValidateSettings:output_type -> hiddify.control.v1.ValidationResult
+	40, // 70: hiddify.control.v1.ControlService.UpdateSettings:output_type -> hiddify.control.v1.Settings
+	40, // 71: hiddify.control.v1.ControlService.ResetSettings:output_type -> hiddify.control.v1.Settings
+	47, // 72: hiddify.control.v1.ControlService.ExportSettings:output_type -> hiddify.control.v1.ExportSettingsResponse
+	40, // 73: hiddify.control.v1.ControlService.ImportSettings:output_type -> hiddify.control.v1.Settings
+	50, // 74: hiddify.control.v1.ControlService.GetServiceInfo:output_type -> hiddify.control.v1.ServiceInfo
+	17, // 75: hiddify.control.v1.ControlService.SetAutoConnect:output_type -> hiddify.control.v1.OperationResult
+	53, // 76: hiddify.control.v1.ControlService.GetDiagnostics:output_type -> hiddify.control.v1.Diagnostics
+	58, // 77: hiddify.control.v1.ControlService.PollAgent:output_type -> hiddify.control.v1.AgentInstruction
+	50, // [50:78] is the sub-list for method output_type
+	22, // [22:50] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_control_v1_control_proto_init() }
@@ -3860,6 +3887,7 @@ func file_control_v1_control_proto_init() {
 		(*Event_Outbound)(nil),
 		(*Event_Warning)(nil),
 		(*Event_ResyncRequired)(nil),
+		(*Event_Agent)(nil),
 	}
 	file_control_v1_control_proto_msgTypes[19].OneofWrappers = []any{
 		(*AddLocalProfileRequest_Metadata)(nil),

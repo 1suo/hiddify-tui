@@ -18,12 +18,13 @@ func TestStateAppliesContiguousEvents(t *testing.T) {
 	for _, event := range []control.Event{
 		{Sequence: 1, Revision: 2, Kind: control.EventProfile, ActiveProfileID: "p-1", ActiveProfileName: "Home"},
 		{Sequence: 2, Revision: 3, Kind: control.EventConnection, ConnectionState: control.ConnectionStarted, EffectiveMode: "tun"},
+		{Sequence: 3, Revision: 4, Kind: control.EventAgent, Agent: control.AgentHealth{Required: true, Connected: true, Applied: true}},
 	} {
 		if err := state.Apply(ctx, daemon, event); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if state.LastSequence != 2 || state.Snapshot.Revision != 3 || state.Snapshot.ActiveProfileName != "Home" || state.Snapshot.ConnectionState != control.ConnectionStarted {
+	if state.LastSequence != 3 || state.Snapshot.Revision != 4 || state.Snapshot.ActiveProfileName != "Home" || state.Snapshot.ConnectionState != control.ConnectionStarted || !state.Snapshot.Agent.Applied {
 		t.Fatalf("unexpected state: %#v", state)
 	}
 }

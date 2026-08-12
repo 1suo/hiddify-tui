@@ -77,6 +77,7 @@ message Event {
     OutboundChange outbound = 5;
     Warning warning = 6;
     ResyncRequired resync_required = 7;
+    AgentHealth agent = 8;
   }
 }
 
@@ -301,6 +302,7 @@ message AgentHealth {
   bool required = 1;
   bool connected = 2;
   string last_error = 3;
+  bool applied = 4;
 }
 
 // The user-session proxy agent polls through the same OS-authorized local

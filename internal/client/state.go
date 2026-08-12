@@ -53,6 +53,8 @@ func (s *State) Apply(ctx context.Context, daemon control.Client, event control.
 		s.Snapshot.SelectedOutbound = event.SelectedOutbound
 	case control.EventWarning:
 		s.Snapshot.LastError = event.LastError
+	case control.EventAgent:
+		s.Snapshot.Agent = event.Agent
 	default:
 		return fmt.Errorf("received unsupported event kind %q", event.Kind)
 	}

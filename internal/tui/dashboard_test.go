@@ -34,9 +34,9 @@ func TestDashboardRendersLiveStatistics(t *testing.T) {
 		LastError:       "agent needs attention",
 		Traffic:         control.TrafficStats{DownlinkBytesPerSecond: 2048, UplinkBytesPerSecond: 1024, TotalDownloadBytes: 3 * 1024 * 1024},
 		System:          control.SystemStats{ConnectionCount: 7, MemoryBytes: 12 * 1024 * 1024},
-		Agent:           control.AgentHealth{Required: true, Connected: true},
+		Agent:           control.AgentHealth{Required: true, Connected: true, Applied: true},
 	}, nil).View().Content
-	for _, want := range []string{"Down        2.0 KiB/s", "Connections 7", "Memory      12.0 MiB", "Agent       connected", "Requested   tun", "Daemon      1.2.3 (API 1.2)", "Core        4.5.6", "Last warning", "agent needs attention"} {
+	for _, want := range []string{"Down        2.0 KiB/s", "Connections 7", "Memory      12.0 MiB", "Agent       connected; proxy applied", "Requested   tun", "Daemon      1.2.3 (API 1.2)", "Core        4.5.6", "Last warning", "agent needs attention"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view does not contain %q:\n%s", want, view)
 		}

@@ -497,7 +497,10 @@ func agentStatus(agent control.AgentHealth) string {
 		return "not required"
 	}
 	if agent.Connected {
-		return "connected"
+		if agent.Applied {
+			return "connected; proxy applied"
+		}
+		return "connected; awaiting proxy application"
 	}
 	if agent.LastError != "" {
 		return "unavailable: " + agent.LastError

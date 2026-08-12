@@ -68,6 +68,7 @@ type SystemStats struct {
 type AgentHealth struct {
 	Required  bool   `json:"required"`
 	Connected bool   `json:"connected"`
+	Applied   bool   `json:"applied"`
 	LastError string `json:"last_error,omitempty"`
 }
 
@@ -115,6 +116,7 @@ const (
 	EventProfile    EventKind = "profile"
 	EventOutbound   EventKind = "outbound"
 	EventWarning    EventKind = "warning"
+	EventAgent      EventKind = "agent"
 	EventResync     EventKind = "resync-required"
 )
 
@@ -132,6 +134,7 @@ type Event struct {
 	EffectiveMode     string          `json:"effective_mode,omitempty"`
 	SelectedOutbound  string          `json:"selected_outbound,omitempty"`
 	LastError         string          `json:"last_error,omitempty"`
+	Agent             AgentHealth     `json:"agent,omitempty"`
 }
 
 // Client is deliberately transport-neutral so the CLI and TUI can be tested
