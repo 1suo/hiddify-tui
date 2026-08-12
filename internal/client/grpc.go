@@ -56,6 +56,30 @@ func (c *GRPCClient) GetSnapshot(ctx context.Context) (control.Snapshot, error) 
 	return snapshotFromProto(response), nil
 }
 
+func (c *GRPCClient) Connect(ctx context.Context, profileID string, mode control.ConnectionMode) error {
+	_, err := c.api.Connect(ctx, &controlv1.ConnectRequest{ProfileId: profileID, Mode: connectionModeToProto(mode)})
+	if err != nil {
+		return fmt.Errorf("connect: %w", err)
+	}
+	return nil
+}
+
+func (c *GRPCClient) Disconnect(ctx context.Context) error {
+	_, err := c.api.Disconnect(ctx, &controlv1.DisconnectRequest{})
+	if err != nil {
+		return fmt.Errorf("disconnect: %w", err)
+	}
+	return nil
+}
+
+func (c *GRPCClient) Restart(ctx context.Context) error {
+	_, err := c.api.Restart(ctx, &controlv1.RestartRequest{})
+	if err != nil {
+		return fmt.Errorf("restart: %w", err)
+	}
+	return nil
+}
+
 func (c *GRPCClient) WatchEvents(ctx context.Context, afterSequence uint64) (<-chan control.Event, error) {
 	stream, err := c.api.WatchEvents(ctx, &controlv1.WatchRequest{AfterSequence: afterSequence})
 	if err != nil {
@@ -280,7 +304,21 @@ func connectionStateFromProto(state controlv1.ConnectionState) control.Connectio
 	}
 }
 
+func connectionModeToProto(mode control.ConnectionMode) controlv1.ConnectionMode {
+	switch mode {
+	case control.ModeTUN:
+		return controlv1.ConnectionMode_CONNECTION_MODE_TUN
+	case control.ModeSystemProxy:
+		return controlv1.ConnectionMode_CONNECTION_MODE_SYSTEM_PROXY
+	case control.ModeLocalProxy:
+		return controlv1.ConnectionMode_CONNECTION_MODE_LOCAL_PROXY
+	default:
+		return controlv1.ConnectionMode_CONNECTION_MODE_UNSPECIFIED
+	}
+}
+
 var _ control.Client = (*GRPCClient)(nil)
+var _ control.ConnectionOperator = (*GRPCClient)(nil)
 var _ control.Watcher = (*GRPCClient)(nil)
 var _ control.ProfileReader = (*GRPCClient)(nil)
 var _ control.ProfileWriter = (*GRPCClient)(nil)

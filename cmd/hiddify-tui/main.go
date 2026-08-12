@@ -58,6 +58,31 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	remaining := flags.Args()
+	if len(remaining) >= 1 && (remaining[0] == "connect" || remaining[0] == "disconnect" || remaining[0] == "restart") {
+		command := remaining[0]
+		connectionFlags := flag.NewFlagSet(command, flag.ContinueOnError)
+		connectionFlags.SetOutput(stderr)
+		profileID := connectionFlags.String("profile", "", "profile ID")
+		mode := connectionFlags.String("mode", "", "tun, system-proxy, or local-proxy")
+		if err := connectionFlags.Parse(remaining[1:]); err != nil || connectionFlags.NArg() != 0 || (command != "connect" && (*profileID != "" || *mode != "")) {
+			return connectionUsage(stderr)
+		}
+		connectionMode := control.ConnectionMode(*mode)
+		if command == "connect" && *mode != "" && connectionMode != control.ModeTUN && connectionMode != control.ModeSystemProxy && connectionMode != control.ModeLocalProxy {
+			return connectionUsage(stderr)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+		daemon, err := client.DialUnix(ctx, *socket)
+		cancel()
+		if err != nil {
+			fmt.Fprintf(stderr, "%s: %v\n", command, err)
+			return cli.ExitUnavailable
+		}
+		defer daemon.Close()
+		ctx, cancel = context.WithTimeout(context.Background(), *timeout)
+		defer cancel()
+		return cli.ConnectionOperation(ctx, daemon, command, *profileID, connectionMode, *jsonOutput, stdout, stderr)
+	}
 	if len(remaining) >= 2 && remaining[0] == "profile" {
 		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 		daemon, err := client.DialUnix(ctx, *socket)
@@ -161,6 +186,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cli.ExitUsage
 	}
 	fmt.Fprintln(stderr, "usage: hiddify-tui [--json] status")
+	return cli.ExitUsage
+}
+
+func connectionUsage(stderr io.Writer) int {
+	fmt.Fprintln(stderr, "usage: hiddify-tui [--json] connect [--profile ID] [--mode tun|system-proxy|local-proxy] | disconnect | restart")
 	return cli.ExitUsage
 }
 

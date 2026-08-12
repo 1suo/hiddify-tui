@@ -19,10 +19,24 @@ import (
 
 type testControlServer struct {
 	controlv1.UnimplementedControlServiceServer
-	snapshot *controlv1.Snapshot
-	events   []*controlv1.Event
-	profiles []*controlv1.Profile
-	content  []byte
+	snapshot  *controlv1.Snapshot
+	events    []*controlv1.Event
+	profiles  []*controlv1.Profile
+	content   []byte
+	connected *controlv1.ConnectRequest
+}
+
+func (s *testControlServer) Connect(_ context.Context, request *controlv1.ConnectRequest) (*controlv1.OperationResult, error) {
+	s.connected = request
+	return &controlv1.OperationResult{}, nil
+}
+
+func (s *testControlServer) Disconnect(context.Context, *controlv1.DisconnectRequest) (*controlv1.OperationResult, error) {
+	return &controlv1.OperationResult{}, nil
+}
+
+func (s *testControlServer) Restart(context.Context, *controlv1.RestartRequest) (*controlv1.OperationResult, error) {
+	return &controlv1.OperationResult{}, nil
 }
 
 func (s *testControlServer) AddLocalProfile(stream grpc.ClientStreamingServer[controlv1.AddLocalProfileRequest, controlv1.Profile]) error {
@@ -132,5 +146,8 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 	added, err := daemon.AddLocalProfile(ctx, "Imported", false, strings.NewReader("vmess://example"))
 	if err != nil || added.ID != "p-local" || string(server.content) != "vmess://example" {
 		t.Fatalf("added = %#v, content=%q, err=%v", added, server.content, err)
+	}
+	if err := daemon.Connect(ctx, "p-1", control.ModeTUN); err != nil || server.connected.GetProfileId() != "p-1" || server.connected.GetMode() != controlv1.ConnectionMode_CONNECTION_MODE_TUN {
+		t.Fatalf("connect request=%#v err=%v", server.connected, err)
 	}
 }

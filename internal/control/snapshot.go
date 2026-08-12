@@ -22,6 +22,14 @@ const (
 	ConnectionFailed        ConnectionState = "failed"
 )
 
+type ConnectionMode string
+
+const (
+	ModeTUN         ConnectionMode = "tun"
+	ModeSystemProxy ConnectionMode = "system-proxy"
+	ModeLocalProxy  ConnectionMode = "local-proxy"
+)
+
 // Snapshot is the complete state a client needs before consuming events.
 type Snapshot struct {
 	APIMajor          uint32          `json:"api_major"`
@@ -132,6 +140,12 @@ type Watcher interface {
 type ProfileReader interface {
 	ListProfiles(context.Context) ([]Profile, error)
 	GetProfile(context.Context, string) (Profile, error)
+}
+
+type ConnectionOperator interface {
+	Connect(context.Context, string, ConnectionMode) error
+	Disconnect(context.Context) error
+	Restart(context.Context) error
 }
 
 type ProfileWriter interface {
