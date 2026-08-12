@@ -19,22 +19,26 @@ import (
 
 type testControlServer struct {
 	controlv1.UnimplementedControlServiceServer
-	snapshot  *controlv1.Snapshot
-	events    []*controlv1.Event
-	profiles  []*controlv1.Profile
-	content   []byte
-	connected *controlv1.ConnectRequest
-	groups    []*controlv1.OutboundGroup
-	selected  *controlv1.SelectOutboundRequest
-	testScope *controlv1.TestOutboundsRequest
-	logs      []*controlv1.LogEntry
-	cleared   bool
-	settings  []byte
-	auto      bool
+	snapshot      *controlv1.Snapshot
+	events        []*controlv1.Event
+	profiles      []*controlv1.Profile
+	content       []byte
+	connected     *controlv1.ConnectRequest
+	connectResult *controlv1.OperationResult
+	groups        []*controlv1.OutboundGroup
+	selected      *controlv1.SelectOutboundRequest
+	testScope     *controlv1.TestOutboundsRequest
+	logs          []*controlv1.LogEntry
+	cleared       bool
+	settings      []byte
+	auto          bool
 }
 
 func (s *testControlServer) Connect(_ context.Context, request *controlv1.ConnectRequest) (*controlv1.OperationResult, error) {
 	s.connected = request
+	if s.connectResult != nil {
+		return s.connectResult, nil
+	}
 	return &controlv1.OperationResult{}, nil
 }
 
@@ -271,5 +275,21 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 	settings, err = daemon.UpdateSettings(ctx, []byte(`{"mode":"local-proxy"}`))
 	if err != nil || string(settings.RedactedJSON) != `{"mode":"local-proxy"}` {
 		t.Fatalf("updated=%#v err=%v", settings, err)
+	}
+}
+
+func TestGRPCClientReturnsTypedOperationFailure(t *testing.T) {
+	server := &testControlServer{connectResult: &controlv1.OperationResult{ErrorCode: controlv1.ErrorCode_ERROR_CODE_NO_ACTIVE_PROFILE, Message: "active profile required"}}
+	socket := startUnixServer(t, server)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	daemon, err := client.DialUnix(ctx, socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer daemon.Close()
+	err = daemon.Connect(ctx, "", control.ModeTUN)
+	if err == nil || !strings.Contains(err.Error(), "ERROR_CODE_NO_ACTIVE_PROFILE") {
+		t.Fatalf("connect error = %v", err)
 	}
 }

@@ -57,27 +57,27 @@ func (c *GRPCClient) GetSnapshot(ctx context.Context) (control.Snapshot, error) 
 }
 
 func (c *GRPCClient) Connect(ctx context.Context, profileID string, mode control.ConnectionMode) error {
-	_, err := c.api.Connect(ctx, &controlv1.ConnectRequest{ProfileId: profileID, Mode: connectionModeToProto(mode)})
+	response, err := c.api.Connect(ctx, &controlv1.ConnectRequest{ProfileId: profileID, Mode: connectionModeToProto(mode)})
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
 	}
-	return nil
+	return operationError("connect", response)
 }
 
 func (c *GRPCClient) Disconnect(ctx context.Context) error {
-	_, err := c.api.Disconnect(ctx, &controlv1.DisconnectRequest{})
+	response, err := c.api.Disconnect(ctx, &controlv1.DisconnectRequest{})
 	if err != nil {
 		return fmt.Errorf("disconnect: %w", err)
 	}
-	return nil
+	return operationError("disconnect", response)
 }
 
 func (c *GRPCClient) Restart(ctx context.Context) error {
-	_, err := c.api.Restart(ctx, &controlv1.RestartRequest{})
+	response, err := c.api.Restart(ctx, &controlv1.RestartRequest{})
 	if err != nil {
 		return fmt.Errorf("restart: %w", err)
 	}
-	return nil
+	return operationError("restart", response)
 }
 
 func (c *GRPCClient) WatchEvents(ctx context.Context, afterSequence uint64) (<-chan control.Event, error) {
@@ -177,27 +177,27 @@ func (c *GRPCClient) UpdateProfileName(ctx context.Context, id, name string) (co
 }
 
 func (c *GRPCClient) RefreshProfile(ctx context.Context, id string) error {
-	_, err := c.api.RefreshProfile(ctx, &controlv1.RefreshProfileRequest{ProfileId: id})
+	response, err := c.api.RefreshProfile(ctx, &controlv1.RefreshProfileRequest{ProfileId: id})
 	if err != nil {
 		return fmt.Errorf("refresh profile: %w", err)
 	}
-	return nil
+	return operationError("refresh profile", response)
 }
 
 func (c *GRPCClient) DeleteProfile(ctx context.Context, id string) error {
-	_, err := c.api.DeleteProfile(ctx, &controlv1.DeleteProfileRequest{ProfileId: id})
+	response, err := c.api.DeleteProfile(ctx, &controlv1.DeleteProfileRequest{ProfileId: id})
 	if err != nil {
 		return fmt.Errorf("delete profile: %w", err)
 	}
-	return nil
+	return operationError("delete profile", response)
 }
 
 func (c *GRPCClient) SetActiveProfile(ctx context.Context, id string) error {
-	_, err := c.api.SetActiveProfile(ctx, &controlv1.SetActiveProfileRequest{ProfileId: id})
+	response, err := c.api.SetActiveProfile(ctx, &controlv1.SetActiveProfileRequest{ProfileId: id})
 	if err != nil {
 		return fmt.Errorf("activate profile: %w", err)
 	}
-	return nil
+	return operationError("activate profile", response)
 }
 
 func (c *GRPCClient) ListOutboundGroups(ctx context.Context) ([]control.OutboundGroup, error) {
@@ -217,11 +217,11 @@ func (c *GRPCClient) ListOutboundGroups(ctx context.Context) ([]control.Outbound
 }
 
 func (c *GRPCClient) SelectOutbound(ctx context.Context, groupID, outboundID string) error {
-	_, err := c.api.SelectOutbound(ctx, &controlv1.SelectOutboundRequest{GroupId: groupID, OutboundId: outboundID})
+	response, err := c.api.SelectOutbound(ctx, &controlv1.SelectOutboundRequest{GroupId: groupID, OutboundId: outboundID})
 	if err != nil {
 		return fmt.Errorf("select outbound: %w", err)
 	}
-	return nil
+	return operationError("select outbound", response)
 }
 
 func (c *GRPCClient) TestOutbounds(ctx context.Context, scope control.TestScope) error {
@@ -236,11 +236,11 @@ func (c *GRPCClient) TestOutbounds(ctx context.Context, scope control.TestScope)
 	default:
 		return fmt.Errorf("test outbounds: no test scope")
 	}
-	_, err := c.api.TestOutbounds(ctx, request)
+	response, err := c.api.TestOutbounds(ctx, request)
 	if err != nil {
 		return fmt.Errorf("test outbounds: %w", err)
 	}
-	return nil
+	return operationError("test outbounds", response)
 }
 
 func (c *GRPCClient) TailLogs(ctx context.Context, tail uint32, level control.LogLevel, follow bool) (<-chan control.LogEntry, error) {
@@ -268,11 +268,11 @@ func (c *GRPCClient) TailLogs(ctx context.Context, tail uint32, level control.Lo
 }
 
 func (c *GRPCClient) ClearLogs(ctx context.Context) error {
-	_, err := c.api.ClearLogs(ctx, &controlv1.ClearLogsRequest{})
+	response, err := c.api.ClearLogs(ctx, &controlv1.ClearLogsRequest{})
 	if err != nil {
 		return fmt.Errorf("clear logs: %w", err)
 	}
-	return nil
+	return operationError("clear logs", response)
 }
 
 func (c *GRPCClient) GetSettings(ctx context.Context) (control.Settings, error) {
@@ -336,11 +336,18 @@ func (c *GRPCClient) GetServiceInfo(ctx context.Context) (control.ServiceInfo, e
 }
 
 func (c *GRPCClient) SetAutoConnect(ctx context.Context, enabled bool) error {
-	_, err := c.api.SetAutoConnect(ctx, &controlv1.SetAutoConnectRequest{Enabled: enabled})
+	response, err := c.api.SetAutoConnect(ctx, &controlv1.SetAutoConnectRequest{Enabled: enabled})
 	if err != nil {
 		return fmt.Errorf("set auto-connect: %w", err)
 	}
-	return nil
+	return operationError("set auto-connect", response)
+}
+
+func operationError(action string, response *controlv1.OperationResult) error {
+	if response == nil || response.GetErrorCode() == controlv1.ErrorCode_ERROR_CODE_UNSPECIFIED || response.GetErrorCode() == controlv1.ErrorCode_ERROR_CODE_OK || response.GetErrorCode() == controlv1.ErrorCode_ERROR_CODE_ALREADY_IN_REQUESTED_STATE {
+		return nil
+	}
+	return fmt.Errorf("%s: %s: %s", action, response.GetErrorCode().String(), response.GetMessage())
 }
 
 func (c *GRPCClient) GetDiagnostics(ctx context.Context) (control.Diagnostics, error) {
