@@ -3,8 +3,10 @@ package client_test
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -20,6 +22,23 @@ type testControlServer struct {
 	snapshot *controlv1.Snapshot
 	events   []*controlv1.Event
 	profiles []*controlv1.Profile
+	content  []byte
+}
+
+func (s *testControlServer) AddLocalProfile(stream grpc.ClientStreamingServer[controlv1.AddLocalProfileRequest, controlv1.Profile]) error {
+	var content []byte
+	for {
+		request, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		content = append(content, request.GetContentChunk()...)
+	}
+	s.content = content
+	return stream.SendAndClose(&controlv1.Profile{Id: "p-local", Name: "Imported", Kind: controlv1.ProfileKind_PROFILE_KIND_LOCAL})
 }
 
 func (s *testControlServer) ListProfiles(context.Context, *controlv1.ListProfilesRequest) (*controlv1.ListProfilesResponse, error) {
@@ -69,7 +88,7 @@ func startUnixServer(t *testing.T, server controlv1.ControlServiceServer) string
 }
 
 func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
-	socket := startUnixServer(t, &testControlServer{
+	server := &testControlServer{
 		snapshot: &controlv1.Snapshot{
 			ApiMajor:          1,
 			Revision:          2,
@@ -86,7 +105,8 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 			Change:   &controlv1.Event_Outbound{Outbound: &controlv1.OutboundChange{SelectedOutbound: "fast"}},
 		}},
 		profiles: []*controlv1.Profile{{Id: "p-1", Name: "Home", Kind: controlv1.ProfileKind_PROFILE_KIND_REMOTE, RedactedUrl: "https://example.test/…"}},
-	})
+	}
+	socket := startUnixServer(t, server)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	daemon, err := client.DialUnix(ctx, socket)
@@ -108,5 +128,9 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 	profiles, err := daemon.ListProfiles(ctx)
 	if err != nil || len(profiles) != 1 || profiles[0].RedactedURL != "https://example.test/…" {
 		t.Fatalf("profiles = %#v, %v", profiles, err)
+	}
+	added, err := daemon.AddLocalProfile(ctx, "Imported", false, strings.NewReader("vmess://example"))
+	if err != nil || added.ID != "p-local" || string(server.content) != "vmess://example" {
+		t.Fatalf("added = %#v, content=%q, err=%v", added, server.content, err)
 	}
 }

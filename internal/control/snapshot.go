@@ -6,6 +6,7 @@ package control
 import (
 	"context"
 	"fmt"
+	"io"
 )
 
 const APIMajor uint32 = 1
@@ -139,6 +140,10 @@ type ProfileWriter interface {
 	RefreshProfile(context.Context, string) error
 	DeleteProfile(context.Context, string) error
 	SetActiveProfile(context.Context, string) error
+}
+
+type LocalProfileWriter interface {
+	AddLocalProfile(context.Context, string, bool, io.Reader) (Profile, error)
 }
 
 func (s Snapshot) ValidateCompatibility() error {

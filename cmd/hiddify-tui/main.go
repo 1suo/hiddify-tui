@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/1suo/hiddify-tui/internal/cli"
@@ -89,6 +90,28 @@ func run(args []string, stdout, stderr io.Writer) int {
 				return profileUsage(stderr)
 			}
 			return cli.ProfileAddRemote(ctx, daemon, profileFlags.Arg(0), *name, *active, *jsonOutput, stdout, stderr)
+		case "add-file", "add-stdin":
+			profileFlags := flag.NewFlagSet("profile "+command, flag.ContinueOnError)
+			profileFlags.SetOutput(stderr)
+			name := profileFlags.String("name", "", "profile name")
+			active := profileFlags.Bool("activate", false, "make profile active")
+			if err := profileFlags.Parse(remaining[2:]); err != nil || (command == "add-file" && profileFlags.NArg() != 1) || (command == "add-stdin" && profileFlags.NArg() != 0) {
+				return profileUsage(stderr)
+			}
+			var content io.Reader = os.Stdin
+			if command == "add-file" {
+				file, err := os.Open(profileFlags.Arg(0))
+				if err != nil {
+					fmt.Fprintf(stderr, "profile add-file: %v\n", err)
+					return cli.ExitUsage
+				}
+				defer file.Close()
+				content = file
+				if *name == "" {
+					*name = filepath.Base(profileFlags.Arg(0))
+				}
+			}
+			return cli.ProfileAddLocal(ctx, daemon, content, *name, *active, *jsonOutput, stdout, stderr)
 		case "rename":
 			if len(remaining) != 4 {
 				return profileUsage(stderr)
@@ -142,7 +165,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func profileUsage(stderr io.Writer) int {
-	fmt.Fprintln(stderr, "usage: hiddify-tui [--json] profile list|show ID|add [--name NAME] [--activate] URL|rename ID NAME|activate ID|refresh ID|delete ID --yes")
+	fmt.Fprintln(stderr, "usage: hiddify-tui [--json] profile list|show ID|add [--name NAME] [--activate] URL|add-file [--name NAME] [--activate] FILE|add-stdin [--name NAME] [--activate]|rename ID NAME|activate ID|refresh ID|delete ID --yes")
 	return cli.ExitUsage
 }
 

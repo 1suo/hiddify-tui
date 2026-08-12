@@ -21,6 +21,8 @@ type GRPCClient struct {
 	api        controlv1.ControlServiceClient
 }
 
+const MaxLocalProfileBytes int64 = 10 << 20
+
 func DefaultSocket() string {
 	if runtime.GOOS == "darwin" {
 		return "/var/run/hiddify/control.sock"
@@ -102,6 +104,42 @@ func (c *GRPCClient) AddRemoteProfile(ctx context.Context, url, name string, act
 	response, err := c.api.AddRemoteProfile(ctx, &controlv1.AddRemoteProfileRequest{Url: url, Name: name, SetActive: active})
 	if err != nil {
 		return control.Profile{}, fmt.Errorf("add remote profile: %w", err)
+	}
+	return profileFromProto(response), nil
+}
+
+func (c *GRPCClient) AddLocalProfile(ctx context.Context, name string, active bool, content io.Reader) (control.Profile, error) {
+	stream, err := c.api.AddLocalProfile(ctx)
+	if err != nil {
+		return control.Profile{}, fmt.Errorf("add local profile: %w", err)
+	}
+	if err := stream.Send(&controlv1.AddLocalProfileRequest{Part: &controlv1.AddLocalProfileRequest_Metadata{Metadata: &controlv1.LocalProfileMetadata{Name: name, SetActive: active}}}); err != nil {
+		return control.Profile{}, fmt.Errorf("send local profile metadata: %w", err)
+	}
+	buffer := make([]byte, 32*1024)
+	var total int64
+	for {
+		count, readErr := content.Read(buffer)
+		if count > 0 {
+			total += int64(count)
+			if total > MaxLocalProfileBytes {
+				return control.Profile{}, fmt.Errorf("local profile exceeds %d byte limit", MaxLocalProfileBytes)
+			}
+			chunk := append([]byte(nil), buffer[:count]...)
+			if err := stream.Send(&controlv1.AddLocalProfileRequest{Part: &controlv1.AddLocalProfileRequest_ContentChunk{ContentChunk: chunk}}); err != nil {
+				return control.Profile{}, fmt.Errorf("send local profile content: %w", err)
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return control.Profile{}, fmt.Errorf("read local profile content: %w", readErr)
+		}
+	}
+	response, err := stream.CloseAndRecv()
+	if err != nil {
+		return control.Profile{}, fmt.Errorf("add local profile: %w", err)
 	}
 	return profileFromProto(response), nil
 }
@@ -246,4 +284,5 @@ var _ control.Client = (*GRPCClient)(nil)
 var _ control.Watcher = (*GRPCClient)(nil)
 var _ control.ProfileReader = (*GRPCClient)(nil)
 var _ control.ProfileWriter = (*GRPCClient)(nil)
+var _ control.LocalProfileWriter = (*GRPCClient)(nil)
 var _ io.Closer = (*GRPCClient)(nil)

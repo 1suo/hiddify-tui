@@ -71,6 +71,15 @@ func ProfileAddRemote(ctx context.Context, daemon control.ProfileWriter, url, na
 	return writeProfile(profile, jsonOutput, stdout, stderr)
 }
 
+func ProfileAddLocal(ctx context.Context, daemon control.LocalProfileWriter, content io.Reader, name string, active, jsonOutput bool, stdout, stderr io.Writer) int {
+	profile, err := daemon.AddLocalProfile(ctx, name, active, content)
+	if err != nil {
+		fmt.Fprintf(stderr, "profile add-file: %v\n", err)
+		return ExitRejected
+	}
+	return writeProfile(profile, jsonOutput, stdout, stderr)
+}
+
 func ProfileRename(ctx context.Context, daemon control.ProfileWriter, id, name string, jsonOutput bool, stdout, stderr io.Writer) int {
 	profile, err := daemon.UpdateProfileName(ctx, id, name)
 	if err != nil {
