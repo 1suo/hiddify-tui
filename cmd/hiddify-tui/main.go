@@ -59,6 +59,28 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	remaining := flags.Args()
+	if len(remaining) >= 1 && (remaining[0] == "autoconnect" || remaining[0] == "service" || remaining[0] == "diagnostics") {
+		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+		daemon, err := client.DialUnix(ctx, *socket)
+		cancel()
+		if err != nil {
+			fmt.Fprintf(stderr, "%s: %v\n", remaining[0], err)
+			return cli.ExitUnavailable
+		}
+		defer daemon.Close()
+		ctx, cancel = context.WithTimeout(context.Background(), *timeout)
+		defer cancel()
+		switch {
+		case len(remaining) == 2 && remaining[0] == "autoconnect" && (remaining[1] == "status" || remaining[1] == "enable" || remaining[1] == "disable"):
+			return cli.AutoConnect(ctx, daemon, remaining[1], *jsonOutput, stdout, stderr)
+		case len(remaining) == 2 && remaining[0] == "service" && remaining[1] == "status":
+			return cli.ServiceStatus(ctx, daemon, *jsonOutput, stdout, stderr)
+		case len(remaining) == 1 && remaining[0] == "diagnostics":
+			return cli.Diagnostics(ctx, daemon, *jsonOutput, stdout, stderr)
+		default:
+			return serviceUsage(stderr)
+		}
+	}
 	if len(remaining) >= 2 && remaining[0] == "settings" {
 		command := remaining[1]
 		includeSecrets := false
@@ -311,6 +333,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cli.ExitUsage
 	}
 	fmt.Fprintln(stderr, "usage: hiddify-tui [--json] status")
+	return cli.ExitUsage
+}
+
+func serviceUsage(stderr io.Writer) int {
+	fmt.Fprintln(stderr, "usage: hiddify-tui autoconnect status|enable|disable | service status | diagnostics")
 	return cli.ExitUsage
 }
 

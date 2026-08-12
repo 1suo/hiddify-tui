@@ -327,6 +327,30 @@ func (c *GRPCClient) ImportSettings(ctx context.Context, candidate []byte) (cont
 	return settingsFromProto(response), nil
 }
 
+func (c *GRPCClient) GetServiceInfo(ctx context.Context) (control.ServiceInfo, error) {
+	response, err := c.api.GetServiceInfo(ctx, &controlv1.GetServiceInfoRequest{})
+	if err != nil {
+		return control.ServiceInfo{}, fmt.Errorf("get service info: %w", err)
+	}
+	return control.ServiceInfo{Installed: response.GetInstalled(), Enabled: response.GetEnabled(), Running: response.GetRunning(), LastError: response.GetLastError()}, nil
+}
+
+func (c *GRPCClient) SetAutoConnect(ctx context.Context, enabled bool) error {
+	_, err := c.api.SetAutoConnect(ctx, &controlv1.SetAutoConnectRequest{Enabled: enabled})
+	if err != nil {
+		return fmt.Errorf("set auto-connect: %w", err)
+	}
+	return nil
+}
+
+func (c *GRPCClient) GetDiagnostics(ctx context.Context) (control.Diagnostics, error) {
+	response, err := c.api.GetDiagnostics(ctx, &controlv1.GetDiagnosticsRequest{})
+	if err != nil {
+		return control.Diagnostics{}, fmt.Errorf("get diagnostics: %w", err)
+	}
+	return control.Diagnostics{DaemonVersion: response.GetDaemonVersion(), CoreVersion: response.GetCoreVersion(), SocketPath: response.GetSocketPath(), ActiveListeners: response.GetActiveListeners(), LastServiceError: response.GetLastServiceError()}, nil
+}
+
 func settingsFromProto(settings *controlv1.Settings) control.Settings {
 	return control.Settings{RedactedJSON: append([]byte(nil), settings.GetRedactedJson()...)}
 }
@@ -389,6 +413,7 @@ func snapshotFromProto(snapshot *controlv1.Snapshot) control.Snapshot {
 			LastError: snapshot.GetAgent().GetLastError(),
 		},
 		Capabilities: snapshot.GetCapabilities(),
+		AutoConnect:  snapshot.GetAutoConnect(),
 	}
 }
 
@@ -483,4 +508,5 @@ var _ control.LocalProfileWriter = (*GRPCClient)(nil)
 var _ control.OutboundOperator = (*GRPCClient)(nil)
 var _ control.LogReader = (*GRPCClient)(nil)
 var _ control.SettingsOperator = (*GRPCClient)(nil)
+var _ control.ServiceReader = (*GRPCClient)(nil)
 var _ io.Closer = (*GRPCClient)(nil)

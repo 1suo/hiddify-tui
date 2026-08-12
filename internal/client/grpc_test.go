@@ -30,6 +30,7 @@ type testControlServer struct {
 	logs      []*controlv1.LogEntry
 	cleared   bool
 	settings  []byte
+	auto      bool
 }
 
 func (s *testControlServer) Connect(_ context.Context, request *controlv1.ConnectRequest) (*controlv1.OperationResult, error) {
@@ -101,6 +102,19 @@ func (s *testControlServer) ExportSettings(_ context.Context, request *controlv1
 func (s *testControlServer) ImportSettings(_ context.Context, request *controlv1.ImportSettingsRequest) (*controlv1.Settings, error) {
 	s.settings = request.GetJson()
 	return &controlv1.Settings{RedactedJson: s.settings}, nil
+}
+
+func (s *testControlServer) GetServiceInfo(context.Context, *controlv1.GetServiceInfoRequest) (*controlv1.ServiceInfo, error) {
+	return &controlv1.ServiceInfo{Installed: true, Enabled: true, Running: true}, nil
+}
+
+func (s *testControlServer) SetAutoConnect(_ context.Context, request *controlv1.SetAutoConnectRequest) (*controlv1.OperationResult, error) {
+	s.auto = request.GetEnabled()
+	return &controlv1.OperationResult{}, nil
+}
+
+func (s *testControlServer) GetDiagnostics(context.Context, *controlv1.GetDiagnosticsRequest) (*controlv1.Diagnostics, error) {
+	return &controlv1.Diagnostics{DaemonVersion: "1.0", CoreVersion: "core", SocketPath: "/run/hiddify/control.sock"}, nil
 }
 
 func (s *testControlServer) AddLocalProfile(stream grpc.ClientStreamingServer[controlv1.AddLocalProfileRequest, controlv1.Profile]) error {
@@ -176,6 +190,7 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 			Traffic:           &controlv1.TrafficStats{DownlinkBytesPerSecond: 2048},
 			System:            &controlv1.SystemStats{ConnectionCount: 2},
 			Agent:             &controlv1.AgentHealth{Required: true, Connected: true},
+			AutoConnect:       true,
 		},
 		events: []*controlv1.Event{{
 			Sequence: 5,
@@ -203,7 +218,7 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 	if err := state.Watch(ctx, daemon, daemon); err != nil {
 		t.Fatal(err)
 	}
-	if state.Snapshot.ConnectionState != control.ConnectionStarted || state.Snapshot.SelectedOutbound != "fast" || state.LastSequence != 5 || state.Snapshot.Traffic.DownlinkBytesPerSecond != 2048 || state.Snapshot.System.ConnectionCount != 2 || !state.Snapshot.Agent.Connected {
+	if state.Snapshot.ConnectionState != control.ConnectionStarted || state.Snapshot.SelectedOutbound != "fast" || state.LastSequence != 5 || state.Snapshot.Traffic.DownlinkBytesPerSecond != 2048 || state.Snapshot.System.ConnectionCount != 2 || !state.Snapshot.Agent.Connected || !state.Snapshot.AutoConnect {
 		t.Fatalf("unexpected recovered state: %#v", state)
 	}
 	profiles, err := daemon.ListProfiles(ctx)
@@ -233,6 +248,17 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 	}
 	if err := daemon.ClearLogs(ctx); err != nil || !server.cleared {
 		t.Fatalf("clear logs err=%v cleared=%v", err, server.cleared)
+	}
+	service, err := daemon.GetServiceInfo(ctx)
+	if err != nil || !service.Running {
+		t.Fatalf("service=%#v err=%v", service, err)
+	}
+	if err := daemon.SetAutoConnect(ctx, false); err != nil || server.auto {
+		t.Fatalf("auto=%v err=%v", server.auto, err)
+	}
+	diagnostics, err := daemon.GetDiagnostics(ctx)
+	if err != nil || diagnostics.SocketPath != "/run/hiddify/control.sock" {
+		t.Fatalf("diagnostics=%#v err=%v", diagnostics, err)
 	}
 	settings, err := daemon.GetSettings(ctx)
 	if err != nil || string(settings.RedactedJSON) != `{"mode":"tun"}` {

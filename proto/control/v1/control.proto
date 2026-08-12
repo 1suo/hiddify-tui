@@ -60,6 +60,7 @@ message Snapshot {
   SystemStats system = 15;
   AgentHealth agent = 16;
   repeated string capabilities = 17;
+  bool auto_connect = 18;
 }
 
 message WatchRequest {

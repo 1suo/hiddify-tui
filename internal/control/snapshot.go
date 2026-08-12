@@ -50,6 +50,7 @@ type Snapshot struct {
 	System            SystemStats     `json:"system"`
 	Agent             AgentHealth     `json:"agent"`
 	Capabilities      []string        `json:"capabilities,omitempty"`
+	AutoConnect       bool            `json:"auto_connect"`
 }
 
 type TrafficStats struct {
@@ -233,6 +234,27 @@ type SettingsOperator interface {
 	ResetSettings(context.Context) (Settings, error)
 	ExportSettings(context.Context, bool) ([]byte, error)
 	ImportSettings(context.Context, []byte) (Settings, error)
+}
+
+type ServiceInfo struct {
+	Installed bool   `json:"installed"`
+	Enabled   bool   `json:"enabled"`
+	Running   bool   `json:"running"`
+	LastError string `json:"last_error,omitempty"`
+}
+
+type Diagnostics struct {
+	DaemonVersion    string   `json:"daemon_version"`
+	CoreVersion      string   `json:"core_version"`
+	SocketPath       string   `json:"socket_path"`
+	ActiveListeners  []string `json:"active_listeners"`
+	LastServiceError string   `json:"last_service_error,omitempty"`
+}
+
+type ServiceReader interface {
+	GetServiceInfo(context.Context) (ServiceInfo, error)
+	SetAutoConnect(context.Context, bool) error
+	GetDiagnostics(context.Context) (Diagnostics, error)
 }
 
 func (s Snapshot) ValidateCompatibility() error {

@@ -366,6 +366,7 @@ type Snapshot struct {
 	System            *SystemStats           `protobuf:"bytes,15,opt,name=system,proto3" json:"system,omitempty"`
 	Agent             *AgentHealth           `protobuf:"bytes,16,opt,name=agent,proto3" json:"agent,omitempty"`
 	Capabilities      []string               `protobuf:"bytes,17,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	AutoConnect       bool                   `protobuf:"varint,18,opt,name=auto_connect,json=autoConnect,proto3" json:"auto_connect,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -517,6 +518,13 @@ func (x *Snapshot) GetCapabilities() []string {
 		return x.Capabilities
 	}
 	return nil
+}
+
+func (x *Snapshot) GetAutoConnect() bool {
+	if x != nil {
+		return x.AutoConnect
+	}
+	return false
 }
 
 type WatchRequest struct {
@@ -3280,7 +3288,7 @@ var File_control_v1_control_proto protoreflect.FileDescriptor
 const file_control_v1_control_proto_rawDesc = "" +
 	"\n" +
 	"\x18control/v1/control.proto\x12\x12hiddify.control.v1\"\x14\n" +
-	"\x12GetSnapshotRequest\"\xe7\x05\n" +
+	"\x12GetSnapshotRequest\"\x8a\x06\n" +
 	"\bSnapshot\x12\x1b\n" +
 	"\tapi_major\x18\x01 \x01(\rR\bapiMajor\x12\x1b\n" +
 	"\tapi_minor\x18\x02 \x01(\rR\bapiMinor\x12%\n" +
@@ -3300,7 +3308,8 @@ const file_control_v1_control_proto_rawDesc = "" +
 	"\atraffic\x18\x0e \x01(\v2 .hiddify.control.v1.TrafficStatsR\atraffic\x127\n" +
 	"\x06system\x18\x0f \x01(\v2\x1f.hiddify.control.v1.SystemStatsR\x06system\x125\n" +
 	"\x05agent\x18\x10 \x01(\v2\x1f.hiddify.control.v1.AgentHealthR\x05agent\x12\"\n" +
-	"\fcapabilities\x18\x11 \x03(\tR\fcapabilities\"5\n" +
+	"\fcapabilities\x18\x11 \x03(\tR\fcapabilities\x12!\n" +
+	"\fauto_connect\x18\x12 \x01(\bR\vautoConnect\"5\n" +
 	"\fWatchRequest\x12%\n" +
 	"\x0eafter_sequence\x18\x01 \x01(\x04R\rafterSequence\"\x9a\x03\n" +
 	"\x05Event\x12\x1a\n" +
