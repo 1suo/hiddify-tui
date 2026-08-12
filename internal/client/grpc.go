@@ -200,6 +200,49 @@ func (c *GRPCClient) SetActiveProfile(ctx context.Context, id string) error {
 	return nil
 }
 
+func (c *GRPCClient) ListOutboundGroups(ctx context.Context) ([]control.OutboundGroup, error) {
+	response, err := c.api.ListOutboundGroups(ctx, &controlv1.ListOutboundGroupsRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("list outbound groups: %w", err)
+	}
+	groups := make([]control.OutboundGroup, 0, len(response.GetGroups()))
+	for _, group := range response.GetGroups() {
+		outbounds := make([]control.Outbound, 0, len(group.GetOutbounds()))
+		for _, outbound := range group.GetOutbounds() {
+			outbounds = append(outbounds, control.Outbound{ID: outbound.GetId(), Tag: outbound.GetTag(), Protocol: outbound.GetProtocol(), Selectable: outbound.GetSelectable(), DelayMillis: outbound.GetDelayMillis(), LastTestUnix: outbound.GetLastTestUnix(), EndpointSummary: outbound.GetEndpointSummary()})
+		}
+		groups = append(groups, control.OutboundGroup{ID: group.GetId(), Name: group.GetName(), SelectedOutboundID: group.GetSelectedOutboundId(), Outbounds: outbounds})
+	}
+	return groups, nil
+}
+
+func (c *GRPCClient) SelectOutbound(ctx context.Context, groupID, outboundID string) error {
+	_, err := c.api.SelectOutbound(ctx, &controlv1.SelectOutboundRequest{GroupId: groupID, OutboundId: outboundID})
+	if err != nil {
+		return fmt.Errorf("select outbound: %w", err)
+	}
+	return nil
+}
+
+func (c *GRPCClient) TestOutbounds(ctx context.Context, scope control.TestScope) error {
+	request := &controlv1.TestOutboundsRequest{}
+	switch {
+	case scope.OutboundID != "":
+		request.Scope = &controlv1.TestOutboundsRequest_OutboundId{OutboundId: scope.OutboundID}
+	case scope.GroupID != "":
+		request.Scope = &controlv1.TestOutboundsRequest_GroupId{GroupId: scope.GroupID}
+	case scope.AllVisible:
+		request.Scope = &controlv1.TestOutboundsRequest_AllVisible{AllVisible: true}
+	default:
+		return fmt.Errorf("test outbounds: no test scope")
+	}
+	_, err := c.api.TestOutbounds(ctx, request)
+	if err != nil {
+		return fmt.Errorf("test outbounds: %w", err)
+	}
+	return nil
+}
+
 func profileFromProto(profile *controlv1.Profile) control.Profile {
 	return control.Profile{
 		ID:                    profile.GetId(),
@@ -323,4 +366,5 @@ var _ control.Watcher = (*GRPCClient)(nil)
 var _ control.ProfileReader = (*GRPCClient)(nil)
 var _ control.ProfileWriter = (*GRPCClient)(nil)
 var _ control.LocalProfileWriter = (*GRPCClient)(nil)
+var _ control.OutboundOperator = (*GRPCClient)(nil)
 var _ io.Closer = (*GRPCClient)(nil)

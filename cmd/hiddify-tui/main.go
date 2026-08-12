@@ -58,6 +58,36 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	remaining := flags.Args()
+	if len(remaining) >= 2 && remaining[0] == "outbound" {
+		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+		daemon, err := client.DialUnix(ctx, *socket)
+		cancel()
+		if err != nil {
+			fmt.Fprintf(stderr, "outbound: %v\n", err)
+			return cli.ExitUnavailable
+		}
+		defer daemon.Close()
+		ctx, cancel = context.WithTimeout(context.Background(), *timeout)
+		defer cancel()
+		switch {
+		case len(remaining) == 2 && remaining[1] == "list":
+			return cli.OutboundList(ctx, daemon, *jsonOutput, stdout, stderr)
+		case len(remaining) == 4 && remaining[1] == "select":
+			return cli.OutboundSelect(ctx, daemon, remaining[2], remaining[3], stdout, stderr)
+		case len(remaining) == 3 && remaining[1] == "test":
+			scope := control.TestScope{}
+			if remaining[2] == "all" {
+				scope.AllVisible = true
+			} else {
+				scope.OutboundID = remaining[2]
+			}
+			return cli.OutboundTest(ctx, daemon, scope, stdout, stderr)
+		case len(remaining) == 4 && remaining[1] == "test" && remaining[2] == "group":
+			return cli.OutboundTest(ctx, daemon, control.TestScope{GroupID: remaining[3]}, stdout, stderr)
+		default:
+			return outboundUsage(stderr)
+		}
+	}
 	if len(remaining) >= 1 && (remaining[0] == "connect" || remaining[0] == "disconnect" || remaining[0] == "restart") {
 		command := remaining[0]
 		connectionFlags := flag.NewFlagSet(command, flag.ContinueOnError)
@@ -186,6 +216,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cli.ExitUsage
 	}
 	fmt.Fprintln(stderr, "usage: hiddify-tui [--json] status")
+	return cli.ExitUsage
+}
+
+func outboundUsage(stderr io.Writer) int {
+	fmt.Fprintln(stderr, "usage: hiddify-tui [--json] outbound list|select GROUP_ID OUTBOUND_ID|test OUTBOUND_ID|test group GROUP_ID|test all")
 	return cli.ExitUsage
 }
 

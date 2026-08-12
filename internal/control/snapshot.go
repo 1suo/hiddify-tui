@@ -160,6 +160,35 @@ type LocalProfileWriter interface {
 	AddLocalProfile(context.Context, string, bool, io.Reader) (Profile, error)
 }
 
+type Outbound struct {
+	ID              string `json:"id"`
+	Tag             string `json:"tag"`
+	Protocol        string `json:"protocol"`
+	Selectable      bool   `json:"selectable"`
+	DelayMillis     int64  `json:"delay_millis,omitempty"`
+	LastTestUnix    int64  `json:"last_test_unix,omitempty"`
+	EndpointSummary string `json:"endpoint_summary,omitempty"`
+}
+
+type OutboundGroup struct {
+	ID                 string     `json:"id"`
+	Name               string     `json:"name"`
+	SelectedOutboundID string     `json:"selected_outbound_id,omitempty"`
+	Outbounds          []Outbound `json:"outbounds"`
+}
+
+type TestScope struct {
+	OutboundID string
+	GroupID    string
+	AllVisible bool
+}
+
+type OutboundOperator interface {
+	ListOutboundGroups(context.Context) ([]OutboundGroup, error)
+	SelectOutbound(context.Context, string, string) error
+	TestOutbounds(context.Context, TestScope) error
+}
+
 func (s Snapshot) ValidateCompatibility() error {
 	if s.APIMajor != APIMajor {
 		return fmt.Errorf("control API major version %d is incompatible with client major version %d", s.APIMajor, APIMajor)

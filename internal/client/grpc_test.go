@@ -24,6 +24,9 @@ type testControlServer struct {
 	profiles  []*controlv1.Profile
 	content   []byte
 	connected *controlv1.ConnectRequest
+	groups    []*controlv1.OutboundGroup
+	selected  *controlv1.SelectOutboundRequest
+	testScope *controlv1.TestOutboundsRequest
 }
 
 func (s *testControlServer) Connect(_ context.Context, request *controlv1.ConnectRequest) (*controlv1.OperationResult, error) {
@@ -36,6 +39,20 @@ func (s *testControlServer) Disconnect(context.Context, *controlv1.DisconnectReq
 }
 
 func (s *testControlServer) Restart(context.Context, *controlv1.RestartRequest) (*controlv1.OperationResult, error) {
+	return &controlv1.OperationResult{}, nil
+}
+
+func (s *testControlServer) ListOutboundGroups(context.Context, *controlv1.ListOutboundGroupsRequest) (*controlv1.ListOutboundGroupsResponse, error) {
+	return &controlv1.ListOutboundGroupsResponse{Groups: s.groups}, nil
+}
+
+func (s *testControlServer) SelectOutbound(_ context.Context, request *controlv1.SelectOutboundRequest) (*controlv1.OperationResult, error) {
+	s.selected = request
+	return &controlv1.OperationResult{}, nil
+}
+
+func (s *testControlServer) TestOutbounds(_ context.Context, request *controlv1.TestOutboundsRequest) (*controlv1.OperationResult, error) {
+	s.testScope = request
 	return &controlv1.OperationResult{}, nil
 }
 
@@ -119,6 +136,7 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 			Change:   &controlv1.Event_Outbound{Outbound: &controlv1.OutboundChange{SelectedOutbound: "fast"}},
 		}},
 		profiles: []*controlv1.Profile{{Id: "p-1", Name: "Home", Kind: controlv1.ProfileKind_PROFILE_KIND_REMOTE, RedactedUrl: "https://example.test/…"}},
+		groups:   []*controlv1.OutboundGroup{{Id: "g-1", Name: "Auto", SelectedOutboundId: "o-1", Outbounds: []*controlv1.Outbound{{Id: "o-1", Tag: "Fast", Selectable: true, DelayMillis: 42}}}},
 	}
 	socket := startUnixServer(t, server)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -149,5 +167,15 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 	}
 	if err := daemon.Connect(ctx, "p-1", control.ModeTUN); err != nil || server.connected.GetProfileId() != "p-1" || server.connected.GetMode() != controlv1.ConnectionMode_CONNECTION_MODE_TUN {
 		t.Fatalf("connect request=%#v err=%v", server.connected, err)
+	}
+	groups, err := daemon.ListOutboundGroups(ctx)
+	if err != nil || len(groups) != 1 || groups[0].Outbounds[0].DelayMillis != 42 {
+		t.Fatalf("outbound groups = %#v, %v", groups, err)
+	}
+	if err := daemon.SelectOutbound(ctx, "g-1", "o-1"); err != nil || server.selected.GetGroupId() != "g-1" {
+		t.Fatalf("select request=%#v err=%v", server.selected, err)
+	}
+	if err := daemon.TestOutbounds(ctx, control.TestScope{AllVisible: true}); err != nil || !server.testScope.GetAllVisible() {
+		t.Fatalf("test request=%#v err=%v", server.testScope, err)
 	}
 }
