@@ -11,9 +11,9 @@ The units intentionally name the target daemon entrypoint:
 /usr/lib/hiddify/hiddify-core daemon run --state-dir=/var/lib/hiddify --socket=/run/hiddify/control.sock
 ```
 
-The upstream core does not implement that command yet, so these are not
-installable release units.  See `docs/core-compatibility.md` for the upstream
-work required before shipping a package.
+The companion core branch implements this command. These remain development
+assets until matching core artifacts are published for every supported Linux
+architecture; a package must ship the exact compatible core build.
 
 ## Installer requirements
 
