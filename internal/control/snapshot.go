@@ -25,9 +25,38 @@ const (
 type Snapshot struct {
 	APIMajor          uint32          `json:"api_major"`
 	APIMinor          uint32          `json:"api_minor"`
+	Revision          uint64          `json:"revision"`
+	EventSequence     uint64          `json:"event_sequence"`
 	DaemonVersion     string          `json:"daemon_version"`
 	CoreVersion       string          `json:"core_version"`
 	ConnectionState   ConnectionState `json:"connection_state"`
+	ActiveProfileID   string          `json:"active_profile_id,omitempty"`
+	ActiveProfileName string          `json:"active_profile_name,omitempty"`
+	RequestedMode     string          `json:"requested_mode,omitempty"`
+	EffectiveMode     string          `json:"effective_mode,omitempty"`
+	SelectedOutbound  string          `json:"selected_outbound,omitempty"`
+	LastError         string          `json:"last_error,omitempty"`
+}
+
+// EventKind identifies the part of the snapshot changed by an event.
+type EventKind string
+
+const (
+	EventConnection EventKind = "connection"
+	EventProfile    EventKind = "profile"
+	EventOutbound   EventKind = "outbound"
+	EventWarning    EventKind = "warning"
+	EventResync     EventKind = "resync-required"
+)
+
+// Event is delivered after a Snapshot. Sequence is monotonic per daemon
+// instance; clients must resynchronize if it is not contiguous.
+type Event struct {
+	Sequence uint64    `json:"sequence"`
+	Revision uint64    `json:"revision"`
+	Kind     EventKind `json:"kind"`
+
+	ConnectionState   ConnectionState `json:"connection_state,omitempty"`
 	ActiveProfileID   string          `json:"active_profile_id,omitempty"`
 	ActiveProfileName string          `json:"active_profile_name,omitempty"`
 	RequestedMode     string          `json:"requested_mode,omitempty"`
@@ -40,6 +69,12 @@ type Snapshot struct {
 // against a fake before the upstream daemon exposes local gRPC.
 type Client interface {
 	GetSnapshot(context.Context) (Snapshot, error)
+}
+
+// Watcher is implemented by a daemon client that supports the event stream.
+// The stream must begin strictly after afterSequence.
+type Watcher interface {
+	WatchEvents(context.Context, uint64) (<-chan Event, error)
 }
 
 func (s Snapshot) ValidateCompatibility() error {

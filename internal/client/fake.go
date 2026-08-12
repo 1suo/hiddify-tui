@@ -11,6 +11,21 @@ import (
 type FakeControl struct {
 	Snapshot control.Snapshot
 	Err      error
+	Events   []control.Event
+}
+
+func (f FakeControl) WatchEvents(ctx context.Context, afterSequence uint64) (<-chan control.Event, error) {
+	if f.Err != nil {
+		return nil, f.Err
+	}
+	events := make(chan control.Event, len(f.Events))
+	for _, event := range f.Events {
+		if event.Sequence > afterSequence {
+			events <- event
+		}
+	}
+	close(events)
+	return events, nil
 }
 
 func (f FakeControl) GetSnapshot(context.Context) (control.Snapshot, error) {

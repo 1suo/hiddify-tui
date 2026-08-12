@@ -8,6 +8,7 @@ option go_package = "github.com/1suo/hiddify-tui/gen/control/v1;controlv1";
 // daemon. This draft intentionally starts with the read path used by status.
 service ControlService {
   rpc GetSnapshot(GetSnapshotRequest) returns (Snapshot);
+  rpc WatchEvents(WatchRequest) returns (stream Event);
 }
 
 message GetSnapshotRequest {}
@@ -24,7 +25,46 @@ message Snapshot {
   string effective_mode = 9;
   string selected_outbound = 10;
   string last_error = 11;
+  uint64 revision = 12;
+  uint64 event_sequence = 13;
 }
+
+message WatchRequest {
+  uint64 after_sequence = 1;
+}
+
+message Event {
+  uint64 sequence = 1;
+  uint64 revision = 2;
+  oneof change {
+    ConnectionChange connection = 3;
+    ProfileChange profile = 4;
+    OutboundChange outbound = 5;
+    Warning warning = 6;
+    ResyncRequired resync_required = 7;
+  }
+}
+
+message ConnectionChange {
+  ConnectionState state = 1;
+  string requested_mode = 2;
+  string effective_mode = 3;
+}
+
+message ProfileChange {
+  string active_profile_id = 1;
+  string active_profile_name = 2;
+}
+
+message OutboundChange {
+  string selected_outbound = 1;
+}
+
+message Warning {
+  string message = 1;
+}
+
+message ResyncRequired {}
 
 enum ConnectionState {
   CONNECTION_STATE_UNSPECIFIED = 0;
