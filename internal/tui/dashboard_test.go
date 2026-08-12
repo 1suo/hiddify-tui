@@ -1,12 +1,15 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/1suo/hiddify-tui/internal/client"
 	"github.com/1suo/hiddify-tui/internal/control"
 )
 
@@ -40,5 +43,38 @@ func TestDashboardQuitsWithoutConnectionAction(t *testing.T) {
 	}
 	if _, ok := command().(tea.QuitMsg); !ok {
 		t.Fatalf("q command = %T, want tea.QuitMsg", command())
+	}
+}
+
+func TestDashboardAppliesLiveUpdate(t *testing.T) {
+	updates := make(chan dashboardUpdate, 1)
+	model := NewDashboard(control.Snapshot{}, nil)
+	model.updates = updates
+	updated, command := model.Update(dashboardUpdate{snapshot: control.Snapshot{ConnectionState: control.ConnectionStarted}})
+	got := updated.(Dashboard)
+	if got.snapshot.ConnectionState != control.ConnectionStarted || command == nil {
+		t.Fatalf("live update = %#v, command %v", got, command)
+	}
+}
+
+func TestStreamDashboardAppliesEvents(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	updates := make(chan dashboardUpdate, 4)
+	daemon := client.FakeControl{
+		Snapshot: control.Snapshot{APIMajor: 1, ConnectionState: control.ConnectionStopped},
+		Events:   []control.Event{{Sequence: 1, Kind: control.EventProfile, ActiveProfileName: "Home"}},
+	}
+	go streamDashboard(ctx, daemon, daemon, updates)
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case update := <-updates:
+			if update.snapshot.ActiveProfileName == "Home" {
+				return
+			}
+		case <-deadline:
+			t.Fatal("did not receive event-applied dashboard update")
+		}
 	}
 }

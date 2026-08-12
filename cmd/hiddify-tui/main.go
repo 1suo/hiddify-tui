@@ -19,17 +19,20 @@ const version = "0.1.0-dev"
 
 func main() {
 	if len(os.Args) == 1 && term.IsTerminal(os.Stdin.Fd()) && term.IsTerminal(os.Stdout.Fd()) {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		daemon, err := client.DialUnix(ctx, client.DefaultSocket())
+		dialCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		daemon, err := client.DialUnix(dialCtx, client.DefaultSocket())
+		cancel()
 		if err == nil {
 			defer daemon.Close()
 		}
-		var snapshot control.Snapshot
 		if err == nil {
-			snapshot, err = client.Snapshot(ctx, daemon)
+			if err := tui.RunLive(context.Background(), daemon, daemon); err != nil {
+				fmt.Fprintf(os.Stderr, "tui: %v\n", err)
+				os.Exit(cli.ExitRejected)
+			}
+			return
 		}
-		if err := tui.Run(snapshot, err); err != nil {
+		if err := tui.Run(control.Snapshot{}, err); err != nil {
 			fmt.Fprintf(os.Stderr, "tui: %v\n", err)
 			os.Exit(cli.ExitRejected)
 		}

@@ -2,12 +2,15 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/1suo/hiddify-tui/internal/client"
 	"github.com/1suo/hiddify-tui/internal/control"
 )
 
@@ -19,13 +22,19 @@ type Dashboard struct {
 	err      error
 	width    int
 	height   int
+	updates  <-chan dashboardUpdate
+}
+
+type dashboardUpdate struct {
+	snapshot control.Snapshot
+	err      error
 }
 
 func NewDashboard(snapshot control.Snapshot, err error) Dashboard {
 	return Dashboard{snapshot: snapshot, err: err}
 }
 
-func (m Dashboard) Init() tea.Cmd { return nil }
+func (m Dashboard) Init() tea.Cmd { return waitForDashboardUpdate(m.updates) }
 
 func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -36,6 +45,9 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+	case dashboardUpdate:
+		m.snapshot, m.err = msg.snapshot, msg.err
+		return m, waitForDashboardUpdate(m.updates)
 	}
 	return m, nil
 }
@@ -67,6 +79,68 @@ func Run(snapshot control.Snapshot, err error) error {
 		return nil
 	}
 	return runErr
+}
+
+// RunLive receives an initial snapshot and then keeps it current from the
+// daemon event stream. A dropped stream is retried with bounded backoff; the
+// client-side state reducer handles sequence gaps by fetching a fresh snapshot.
+func RunLive(ctx context.Context, daemon control.Client, watcher control.Watcher) error {
+	watchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	updates := make(chan dashboardUpdate, 1)
+	model := NewDashboard(control.Snapshot{}, nil)
+	model.updates = updates
+	go streamDashboard(watchCtx, daemon, watcher, updates)
+	_, runErr := tea.NewProgram(model).Run()
+	if errors.Is(runErr, tea.ErrInterrupted) {
+		return nil
+	}
+	return runErr
+}
+
+func waitForDashboardUpdate(updates <-chan dashboardUpdate) tea.Cmd {
+	if updates == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		update := <-updates
+		return update
+	}
+}
+
+func streamDashboard(ctx context.Context, daemon control.Client, watcher control.Watcher, updates chan<- dashboardUpdate) {
+	backoff := 200 * time.Millisecond
+	var state client.State
+	for {
+		loaded, err := client.NewState(ctx, daemon)
+		if err == nil {
+			state = loaded
+			sendDashboardUpdate(ctx, updates, dashboardUpdate{snapshot: state.Snapshot})
+			err = state.Watch(ctx, daemon, watcher)
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		if err == nil {
+			err = errors.New("daemon event stream ended")
+		}
+		sendDashboardUpdate(ctx, updates, dashboardUpdate{snapshot: state.Snapshot, err: err})
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if backoff < 2*time.Second {
+			backoff *= 2
+		}
+	}
+}
+
+func sendDashboardUpdate(ctx context.Context, updates chan<- dashboardUpdate, update dashboardUpdate) {
+	select {
+	case updates <- update:
+	case <-ctx.Done():
+	}
 }
 
 func valueOr(value, fallback string) string {
