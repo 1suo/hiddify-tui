@@ -189,6 +189,28 @@ type OutboundOperator interface {
 	TestOutbounds(context.Context, TestScope) error
 }
 
+type LogLevel string
+
+const (
+	LogDebug LogLevel = "debug"
+	LogInfo  LogLevel = "info"
+	LogWarn  LogLevel = "warn"
+	LogError LogLevel = "error"
+)
+
+type LogEntry struct {
+	Sequence      uint64   `json:"sequence"`
+	TimestampUnix int64    `json:"timestamp_unix_nano"`
+	Level         LogLevel `json:"level"`
+	Component     string   `json:"component"`
+	Message       string   `json:"message"`
+}
+
+type LogReader interface {
+	TailLogs(context.Context, uint32, LogLevel, bool) (<-chan LogEntry, error)
+	ClearLogs(context.Context) error
+}
+
 func (s Snapshot) ValidateCompatibility() error {
 	if s.APIMajor != APIMajor {
 		return fmt.Errorf("control API major version %d is incompatible with client major version %d", s.APIMajor, APIMajor)

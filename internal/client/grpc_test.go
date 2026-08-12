@@ -27,6 +27,8 @@ type testControlServer struct {
 	groups    []*controlv1.OutboundGroup
 	selected  *controlv1.SelectOutboundRequest
 	testScope *controlv1.TestOutboundsRequest
+	logs      []*controlv1.LogEntry
+	cleared   bool
 }
 
 func (s *testControlServer) Connect(_ context.Context, request *controlv1.ConnectRequest) (*controlv1.OperationResult, error) {
@@ -53,6 +55,20 @@ func (s *testControlServer) SelectOutbound(_ context.Context, request *controlv1
 
 func (s *testControlServer) TestOutbounds(_ context.Context, request *controlv1.TestOutboundsRequest) (*controlv1.OperationResult, error) {
 	s.testScope = request
+	return &controlv1.OperationResult{}, nil
+}
+
+func (s *testControlServer) TailLogs(_ *controlv1.TailLogsRequest, stream grpc.ServerStreamingServer[controlv1.LogEntry]) error {
+	for _, entry := range s.logs {
+		if err := stream.Send(entry); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *testControlServer) ClearLogs(context.Context, *controlv1.ClearLogsRequest) (*controlv1.OperationResult, error) {
+	s.cleared = true
 	return &controlv1.OperationResult{}, nil
 }
 
@@ -137,6 +153,7 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 		}},
 		profiles: []*controlv1.Profile{{Id: "p-1", Name: "Home", Kind: controlv1.ProfileKind_PROFILE_KIND_REMOTE, RedactedUrl: "https://example.test/…"}},
 		groups:   []*controlv1.OutboundGroup{{Id: "g-1", Name: "Auto", SelectedOutboundId: "o-1", Outbounds: []*controlv1.Outbound{{Id: "o-1", Tag: "Fast", Selectable: true, DelayMillis: 42}}}},
+		logs:     []*controlv1.LogEntry{{Sequence: 1, Level: controlv1.LogLevel_LOG_LEVEL_WARN, Component: "core", Message: "redacted"}},
 	}
 	socket := startUnixServer(t, server)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -177,5 +194,12 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 	}
 	if err := daemon.TestOutbounds(ctx, control.TestScope{AllVisible: true}); err != nil || !server.testScope.GetAllVisible() {
 		t.Fatalf("test request=%#v err=%v", server.testScope, err)
+	}
+	entries, err := daemon.TailLogs(ctx, 10, control.LogInfo, false)
+	if err != nil || (<-entries).Message != "redacted" {
+		t.Fatalf("logs err=%v", err)
+	}
+	if err := daemon.ClearLogs(ctx); err != nil || !server.cleared {
+		t.Fatalf("clear logs err=%v cleared=%v", err, server.cleared)
 	}
 }

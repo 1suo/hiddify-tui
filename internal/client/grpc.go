@@ -243,6 +243,38 @@ func (c *GRPCClient) TestOutbounds(ctx context.Context, scope control.TestScope)
 	return nil
 }
 
+func (c *GRPCClient) TailLogs(ctx context.Context, tail uint32, level control.LogLevel, follow bool) (<-chan control.LogEntry, error) {
+	stream, err := c.api.TailLogs(ctx, &controlv1.TailLogsRequest{InitialTail: tail, MinimumLevel: logLevelToProto(level), Follow: follow})
+	if err != nil {
+		return nil, fmt.Errorf("tail logs: %w", err)
+	}
+	entries := make(chan control.LogEntry)
+	go func() {
+		defer close(entries)
+		for {
+			entry, err := stream.Recv()
+			if err != nil {
+				return
+			}
+			converted := control.LogEntry{Sequence: entry.GetSequence(), TimestampUnix: entry.GetTimestampUnixNano(), Level: logLevelFromProto(entry.GetLevel()), Component: entry.GetComponent(), Message: entry.GetMessage()}
+			select {
+			case entries <- converted:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return entries, nil
+}
+
+func (c *GRPCClient) ClearLogs(ctx context.Context) error {
+	_, err := c.api.ClearLogs(ctx, &controlv1.ClearLogsRequest{})
+	if err != nil {
+		return fmt.Errorf("clear logs: %w", err)
+	}
+	return nil
+}
+
 func profileFromProto(profile *controlv1.Profile) control.Profile {
 	return control.Profile{
 		ID:                    profile.GetId(),
@@ -360,6 +392,32 @@ func connectionModeToProto(mode control.ConnectionMode) controlv1.ConnectionMode
 	}
 }
 
+func logLevelToProto(level control.LogLevel) controlv1.LogLevel {
+	switch level {
+	case control.LogDebug:
+		return controlv1.LogLevel_LOG_LEVEL_DEBUG
+	case control.LogWarn:
+		return controlv1.LogLevel_LOG_LEVEL_WARN
+	case control.LogError:
+		return controlv1.LogLevel_LOG_LEVEL_ERROR
+	default:
+		return controlv1.LogLevel_LOG_LEVEL_INFO
+	}
+}
+
+func logLevelFromProto(level controlv1.LogLevel) control.LogLevel {
+	switch level {
+	case controlv1.LogLevel_LOG_LEVEL_DEBUG:
+		return control.LogDebug
+	case controlv1.LogLevel_LOG_LEVEL_WARN:
+		return control.LogWarn
+	case controlv1.LogLevel_LOG_LEVEL_ERROR:
+		return control.LogError
+	default:
+		return control.LogInfo
+	}
+}
+
 var _ control.Client = (*GRPCClient)(nil)
 var _ control.ConnectionOperator = (*GRPCClient)(nil)
 var _ control.Watcher = (*GRPCClient)(nil)
@@ -367,4 +425,5 @@ var _ control.ProfileReader = (*GRPCClient)(nil)
 var _ control.ProfileWriter = (*GRPCClient)(nil)
 var _ control.LocalProfileWriter = (*GRPCClient)(nil)
 var _ control.OutboundOperator = (*GRPCClient)(nil)
+var _ control.LogReader = (*GRPCClient)(nil)
 var _ io.Closer = (*GRPCClient)(nil)

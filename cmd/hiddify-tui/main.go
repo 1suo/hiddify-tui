@@ -58,6 +58,39 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	remaining := flags.Args()
+	if len(remaining) >= 1 && remaining[0] == "logs" {
+		logFlags := flag.NewFlagSet("logs", flag.ContinueOnError)
+		logFlags.SetOutput(stderr)
+		follow := logFlags.Bool("follow", false, "follow new entries")
+		tail := logFlags.Uint("tail", 100, "initial number of entries")
+		level := logFlags.String("level", "info", "debug, info, warn, or error")
+		if len(remaining) > 1 && remaining[1] == "clear" {
+			if len(remaining) != 3 || remaining[2] != "--yes" {
+				fmt.Fprintln(stderr, "logs clear requires --yes")
+				return cli.ExitUsage
+			}
+		} else if err := logFlags.Parse(remaining[1:]); err != nil || logFlags.NArg() != 0 {
+			return logsUsage(stderr)
+		}
+		logLevel := control.LogLevel(*level)
+		if logLevel != control.LogDebug && logLevel != control.LogInfo && logLevel != control.LogWarn && logLevel != control.LogError {
+			return logsUsage(stderr)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+		daemon, err := client.DialUnix(ctx, *socket)
+		cancel()
+		if err != nil {
+			fmt.Fprintf(stderr, "logs: %v\n", err)
+			return cli.ExitUnavailable
+		}
+		defer daemon.Close()
+		if len(remaining) > 1 && remaining[1] == "clear" {
+			ctx, cancel = context.WithTimeout(context.Background(), *timeout)
+			defer cancel()
+			return cli.ClearLogs(ctx, daemon, stdout, stderr)
+		}
+		return cli.Logs(context.Background(), daemon, uint32(*tail), logLevel, *follow, *jsonOutput, stdout, stderr)
+	}
 	if len(remaining) >= 2 && remaining[0] == "outbound" {
 		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 		daemon, err := client.DialUnix(ctx, *socket)
@@ -216,6 +249,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cli.ExitUsage
 	}
 	fmt.Fprintln(stderr, "usage: hiddify-tui [--json] status")
+	return cli.ExitUsage
+}
+
+func logsUsage(stderr io.Writer) int {
+	fmt.Fprintln(stderr, "usage: hiddify-tui [--json] logs [--follow] [--level debug|info|warn|error] [--tail N] | logs clear --yes")
 	return cli.ExitUsage
 }
 
