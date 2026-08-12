@@ -115,8 +115,12 @@ message OperationResult {
 }
 
 message ListProfilesRequest {}
-message GetProfileRequest { string profile_id = 1; }
-message ListProfilesResponse { repeated Profile profiles = 1; }
+message GetProfileRequest {
+  string profile_id = 1;
+}
+message ListProfilesResponse {
+  repeated Profile profiles = 1;
+}
 
 message Profile {
   string id = 1;
@@ -164,12 +168,20 @@ message UpdateProfileRequest {
   int64 update_interval_seconds = 3;
 }
 
-message RefreshProfileRequest { string profile_id = 1; }
-message DeleteProfileRequest { string profile_id = 1; }
-message SetActiveProfileRequest { string profile_id = 1; }
+message RefreshProfileRequest {
+  string profile_id = 1;
+}
+message DeleteProfileRequest {
+  string profile_id = 1;
+}
+message SetActiveProfileRequest {
+  string profile_id = 1;
+}
 
 message ListOutboundGroupsRequest {}
-message ListOutboundGroupsResponse { repeated OutboundGroup groups = 1; }
+message ListOutboundGroupsResponse {
+  repeated OutboundGroup groups = 1;
+}
 
 message OutboundGroup {
   string id = 1;
@@ -217,8 +229,12 @@ message LogEntry {
 
 message ClearLogsRequest {}
 message GetSettingsRequest {}
-message Settings { bytes redacted_json = 1; }
-message ValidateSettingsRequest { bytes candidate_json = 1; }
+message Settings {
+  bytes redacted_json = 1;
+}
+message ValidateSettingsRequest {
+  bytes candidate_json = 1;
+}
 
 message ValidationResult {
   bool valid = 1;
@@ -230,15 +246,21 @@ message FieldError {
   string message = 2;
 }
 
-message UpdateSettingsRequest { bytes candidate_json = 1; }
+message UpdateSettingsRequest {
+  bytes candidate_json = 1;
+}
 message ResetSettingsRequest {}
 
 message ExportSettingsRequest {
   bool include_secrets = 1;
 }
 
-message ExportSettingsResponse { bytes json = 1; }
-message ImportSettingsRequest { bytes json = 1; }
+message ExportSettingsResponse {
+  bytes json = 1;
+}
+message ImportSettingsRequest {
+  bytes json = 1;
+}
 message GetServiceInfoRequest {}
 
 message ServiceInfo {
@@ -248,7 +270,9 @@ message ServiceInfo {
   string last_error = 4;
 }
 
-message SetAutoConnectRequest { bool enabled = 1; }
+message SetAutoConnectRequest {
+  bool enabled = 1;
+}
 message GetDiagnosticsRequest {}
 
 message Diagnostics {
