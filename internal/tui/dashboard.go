@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -29,6 +30,8 @@ type Dashboard struct {
 	groups            []control.OutboundGroup
 	logs              []control.LogEntry
 	settings          control.Settings
+	service           control.ServiceInfo
+	diagnostics       control.Diagnostics
 	connection        control.ConnectionOperator
 	profilesAPI       control.ProfileWriter
 	outboundsAPI      control.OutboundOperator
@@ -48,15 +51,18 @@ const (
 	pageOutbounds page = "outbounds"
 	pageLogs      page = "logs"
 	pageSettings  page = "settings"
+	pageService   page = "service"
 )
 
 type dashboardUpdate struct {
-	snapshot control.Snapshot
-	err      error
-	profiles []control.Profile
-	groups   []control.OutboundGroup
-	logs     []control.LogEntry
-	settings control.Settings
+	snapshot    control.Snapshot
+	err         error
+	profiles    []control.Profile
+	groups      []control.OutboundGroup
+	logs        []control.LogEntry
+	settings    control.Settings
+	service     control.ServiceInfo
+	diagnostics control.Diagnostics
 }
 
 type actionResult struct {
@@ -94,6 +100,8 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.page = pageLogs
 		case "5", "s":
 			m.page = pageSettings
+		case "6":
+			m.page = pageService
 		case "c":
 			return m, m.connectionAction("connect")
 		case "x":
@@ -129,7 +137,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case dashboardUpdate:
-		m.snapshot, m.err, m.profiles, m.groups, m.logs, m.settings = msg.snapshot, msg.err, msg.profiles, msg.groups, msg.logs, msg.settings
+		m.snapshot, m.err, m.profiles, m.groups, m.logs, m.settings, m.service, m.diagnostics = msg.snapshot, msg.err, msg.profiles, msg.groups, msg.logs, msg.settings, msg.service, msg.diagnostics
 		return m, waitForDashboardUpdate(m.updates)
 	case actionResult:
 		if msg.err != nil {
@@ -152,6 +160,8 @@ func (m Dashboard) View() tea.View {
 		content = m.logsView()
 	case pageSettings:
 		content = m.settingsView()
+	case pageService:
+		content = m.serviceView()
 	default:
 		content = m.dashboardView()
 	}
@@ -170,9 +180,9 @@ func (m Dashboard) View() tea.View {
 
 func (m Dashboard) footer() string {
 	if m.width > 0 && m.width <= 80 {
-		return "1 Dash  2 Prof  3 Out  4 Logs  5 Set\nc connect  x x disconnect  r restart  Enter select  t test  C C clear\nq/Ctrl+C quit; connection stays active"
+		return "1 Dash  2 Prof  3 Out  4 Logs  5 Set  6 Svc\nc connect  x x disconnect  r restart  Enter select  t test  C C clear\nq/Ctrl+C quit; connection stays active"
 	}
-	return "1 Dashboard  2 Profiles  3 Outbounds  4 Logs  5 Settings\nc connect  x disconnect  r restart  ↑/↓ select  Enter activate/select  t test outbound  C clear logs\nq / Ctrl+C quit (connection stays active)"
+	return "1 Dashboard  2 Profiles  3 Outbounds  4 Logs  5 Settings  6 Service\nc connect  x disconnect  r restart  ↑/↓ select  Enter activate/select  t test outbound  C clear logs\nq / Ctrl+C quit (connection stays active)"
 }
 
 func (m Dashboard) dashboardView() string {
@@ -262,6 +272,21 @@ func (m Dashboard) settingsView() string {
 		return "Settings\n\nDaemon returned invalid redacted JSON."
 	}
 	return "Settings (redacted)\n\n" + formatted.String() + "\n\nUse hiddify-tui settings validate|set|import|export for explicit file-based changes."
+}
+
+func (m Dashboard) serviceView() string {
+	listeners := "none"
+	if len(m.diagnostics.ActiveListeners) > 0 {
+		listeners = strings.Join(m.diagnostics.ActiveListeners, ", ")
+	}
+	content := fmt.Sprintf("Service\n\nInstalled   %t\nEnabled     %t\nRunning     %t\nSocket      %s\nListeners   %s\nDaemon      %s\nCore        %s", m.service.Installed, m.service.Enabled, m.service.Running, valueOr(m.diagnostics.SocketPath, "unknown"), listeners, valueOr(m.diagnostics.DaemonVersion, "unknown"), valueOr(m.diagnostics.CoreVersion, "unknown"))
+	if m.service.LastError != "" {
+		content += "\n\nService error\n" + m.service.LastError
+	}
+	if m.diagnostics.LastServiceError != "" && m.diagnostics.LastServiceError != m.service.LastError {
+		content += "\n\nLast diagnostic\n" + m.diagnostics.LastServiceError
+	}
+	return content
 }
 
 // Run opens the alternate-screen dashboard. Ctrl+C is a normal detach.
@@ -412,6 +437,10 @@ func streamDashboard(ctx context.Context, daemon control.Client, watcher control
 			}
 			if operator, ok := daemon.(control.SettingsOperator); ok {
 				update.settings, _ = operator.GetSettings(ctx)
+			}
+			if reader, ok := daemon.(control.ServiceReader); ok {
+				update.service, _ = reader.GetServiceInfo(ctx)
+				update.diagnostics, _ = reader.GetDiagnostics(ctx)
 			}
 			sendDashboardUpdate(ctx, updates, update)
 			err = state.Watch(ctx, daemon, watcher)

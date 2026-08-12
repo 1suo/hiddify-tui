@@ -241,6 +241,19 @@ func TestDashboardRendersRedactedSettings(t *testing.T) {
 	}
 }
 
+func TestDashboardRendersServiceDiagnostics(t *testing.T) {
+	model := NewDashboard(control.Snapshot{}, nil)
+	model.page = pageService
+	model.service = control.ServiceInfo{Installed: true, Enabled: true, Running: false, LastError: "failed to start"}
+	model.diagnostics = control.Diagnostics{SocketPath: "/run/hiddify/control.sock", ActiveListeners: []string{"127.0.0.1:8080"}, DaemonVersion: "1.2.3", CoreVersion: "4.5.6", LastServiceError: "unit exited"}
+	view := model.View().Content
+	for _, want := range []string{"Installed   true", "Running     false", "/run/hiddify/control.sock", "127.0.0.1:8080", "failed to start", "unit exited"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("service view missing %q:\n%s", want, view)
+		}
+	}
+}
+
 type recordingLogReader struct{ clears int }
 
 func (r *recordingLogReader) TailLogs(context.Context, uint32, control.LogLevel, bool) (<-chan control.LogEntry, error) {
