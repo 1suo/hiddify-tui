@@ -60,6 +60,35 @@ type AgentHealth struct {
 	LastError string `json:"last_error,omitempty"`
 }
 
+type ProfileKind string
+
+const (
+	ProfileRemote ProfileKind = "remote"
+	ProfileLocal  ProfileKind = "local"
+)
+
+// Profile contains daemon-owned profile metadata only. Remote URLs are already
+// redacted by the daemon and the original URL is never available to the UI.
+type Profile struct {
+	ID                    string      `json:"id"`
+	Name                  string      `json:"name"`
+	Kind                  ProfileKind `json:"kind"`
+	Active                bool        `json:"active"`
+	RedactedURL           string      `json:"redacted_url,omitempty"`
+	LastSuccessfulRefresh int64       `json:"last_successful_refresh_unix,omitempty"`
+	LastAttemptedRefresh  int64       `json:"last_attempted_refresh_unix,omitempty"`
+	UpdateIntervalSeconds int64       `json:"update_interval_seconds,omitempty"`
+	Subscription          Usage       `json:"subscription"`
+	LastRefreshError      string      `json:"last_refresh_error,omitempty"`
+}
+
+type Usage struct {
+	UploadBytes   int64 `json:"upload_bytes"`
+	DownloadBytes int64 `json:"download_bytes"`
+	TotalBytes    int64 `json:"total_bytes"`
+	ExpiryUnix    int64 `json:"expiry_unix,omitempty"`
+}
+
 // EventKind identifies the part of the snapshot changed by an event.
 type EventKind string
 
@@ -97,6 +126,11 @@ type Client interface {
 // The stream must begin strictly after afterSequence.
 type Watcher interface {
 	WatchEvents(context.Context, uint64) (<-chan Event, error)
+}
+
+type ProfileReader interface {
+	ListProfiles(context.Context) ([]Profile, error)
+	GetProfile(context.Context, string) (Profile, error)
 }
 
 func (s Snapshot) ValidateCompatibility() error {

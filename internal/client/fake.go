@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/1suo/hiddify-tui/internal/control"
 )
@@ -12,6 +13,26 @@ type FakeControl struct {
 	Snapshot control.Snapshot
 	Err      error
 	Events   []control.Event
+	Profiles []control.Profile
+}
+
+func (f FakeControl) ListProfiles(context.Context) ([]control.Profile, error) {
+	if f.Err != nil {
+		return nil, f.Err
+	}
+	return f.Profiles, nil
+}
+
+func (f FakeControl) GetProfile(_ context.Context, id string) (control.Profile, error) {
+	if f.Err != nil {
+		return control.Profile{}, f.Err
+	}
+	for _, profile := range f.Profiles {
+		if profile.ID == id {
+			return profile, nil
+		}
+	}
+	return control.Profile{}, fmt.Errorf("profile %q not found", id)
 }
 
 func (f FakeControl) WatchEvents(ctx context.Context, afterSequence uint64) (<-chan control.Event, error) {

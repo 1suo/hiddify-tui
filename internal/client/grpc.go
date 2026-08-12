@@ -78,6 +78,53 @@ func (c *GRPCClient) WatchEvents(ctx context.Context, afterSequence uint64) (<-c
 	return events, nil
 }
 
+func (c *GRPCClient) ListProfiles(ctx context.Context) ([]control.Profile, error) {
+	response, err := c.api.ListProfiles(ctx, &controlv1.ListProfilesRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("list profiles: %w", err)
+	}
+	profiles := make([]control.Profile, 0, len(response.GetProfiles()))
+	for _, profile := range response.GetProfiles() {
+		profiles = append(profiles, profileFromProto(profile))
+	}
+	return profiles, nil
+}
+
+func (c *GRPCClient) GetProfile(ctx context.Context, id string) (control.Profile, error) {
+	response, err := c.api.GetProfile(ctx, &controlv1.GetProfileRequest{ProfileId: id})
+	if err != nil {
+		return control.Profile{}, fmt.Errorf("get profile: %w", err)
+	}
+	return profileFromProto(response), nil
+}
+
+func profileFromProto(profile *controlv1.Profile) control.Profile {
+	return control.Profile{
+		ID:                    profile.GetId(),
+		Name:                  profile.GetName(),
+		Kind:                  profileKindFromProto(profile.GetKind()),
+		Active:                profile.GetActive(),
+		RedactedURL:           profile.GetRedactedUrl(),
+		LastSuccessfulRefresh: profile.GetLastSuccessfulRefreshUnix(),
+		LastAttemptedRefresh:  profile.GetLastAttemptedRefreshUnix(),
+		UpdateIntervalSeconds: profile.GetUpdateIntervalSeconds(),
+		Subscription: control.Usage{
+			UploadBytes:   profile.GetSubscription().GetUploadBytes(),
+			DownloadBytes: profile.GetSubscription().GetDownloadBytes(),
+			TotalBytes:    profile.GetSubscription().GetTotalBytes(),
+			ExpiryUnix:    profile.GetSubscription().GetExpiryUnix(),
+		},
+		LastRefreshError: profile.GetLastRefreshError(),
+	}
+}
+
+func profileKindFromProto(kind controlv1.ProfileKind) control.ProfileKind {
+	if kind == controlv1.ProfileKind_PROFILE_KIND_LOCAL {
+		return control.ProfileLocal
+	}
+	return control.ProfileRemote
+}
+
 func snapshotFromProto(snapshot *controlv1.Snapshot) control.Snapshot {
 	return control.Snapshot{
 		APIMajor:          snapshot.GetApiMajor(),
@@ -157,4 +204,5 @@ func connectionStateFromProto(state controlv1.ConnectionState) control.Connectio
 
 var _ control.Client = (*GRPCClient)(nil)
 var _ control.Watcher = (*GRPCClient)(nil)
+var _ control.ProfileReader = (*GRPCClient)(nil)
 var _ io.Closer = (*GRPCClient)(nil)

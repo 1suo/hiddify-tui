@@ -19,6 +19,20 @@ type testControlServer struct {
 	controlv1.UnimplementedControlServiceServer
 	snapshot *controlv1.Snapshot
 	events   []*controlv1.Event
+	profiles []*controlv1.Profile
+}
+
+func (s *testControlServer) ListProfiles(context.Context, *controlv1.ListProfilesRequest) (*controlv1.ListProfilesResponse, error) {
+	return &controlv1.ListProfilesResponse{Profiles: s.profiles}, nil
+}
+
+func (s *testControlServer) GetProfile(_ context.Context, request *controlv1.GetProfileRequest) (*controlv1.Profile, error) {
+	for _, profile := range s.profiles {
+		if profile.GetId() == request.GetProfileId() {
+			return profile, nil
+		}
+	}
+	return nil, nil
 }
 
 func (s *testControlServer) GetSnapshot(context.Context, *controlv1.GetSnapshotRequest) (*controlv1.Snapshot, error) {
@@ -71,6 +85,7 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 			Revision: 3,
 			Change:   &controlv1.Event_Outbound{Outbound: &controlv1.OutboundChange{SelectedOutbound: "fast"}},
 		}},
+		profiles: []*controlv1.Profile{{Id: "p-1", Name: "Home", Kind: controlv1.ProfileKind_PROFILE_KIND_REMOTE, RedactedUrl: "https://example.test/…"}},
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -89,5 +104,9 @@ func TestGRPCClientSnapshotAndEventsOverUnixSocket(t *testing.T) {
 	}
 	if state.Snapshot.ConnectionState != control.ConnectionStarted || state.Snapshot.SelectedOutbound != "fast" || state.LastSequence != 5 || state.Snapshot.Traffic.DownlinkBytesPerSecond != 2048 || state.Snapshot.System.ConnectionCount != 2 || !state.Snapshot.Agent.Connected {
 		t.Fatalf("unexpected recovered state: %#v", state)
+	}
+	profiles, err := daemon.ListProfiles(ctx)
+	if err != nil || len(profiles) != 1 || profiles[0].RedactedURL != "https://example.test/…" {
+		t.Fatalf("profiles = %#v, %v", profiles, err)
 	}
 }

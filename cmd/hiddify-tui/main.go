@@ -57,6 +57,27 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	remaining := flags.Args()
+	if len(remaining) >= 2 && remaining[0] == "profile" {
+		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+		daemon, err := client.DialUnix(ctx, *socket)
+		cancel()
+		if err != nil {
+			fmt.Fprintf(stderr, "profile: %v\n", err)
+			return cli.ExitUnavailable
+		}
+		defer daemon.Close()
+		ctx, cancel = context.WithTimeout(context.Background(), *timeout)
+		defer cancel()
+		switch {
+		case len(remaining) == 2 && remaining[1] == "list":
+			return cli.ProfileList(ctx, daemon, *jsonOutput, stdout, stderr)
+		case len(remaining) == 3 && remaining[1] == "show":
+			return cli.ProfileShow(ctx, daemon, remaining[2], *jsonOutput, stdout, stderr)
+		default:
+			fmt.Fprintln(stderr, "usage: hiddify-tui [--json] profile list|show ID")
+			return cli.ExitUsage
+		}
+	}
 	if len(remaining) >= 1 && remaining[0] == "status" {
 		watch := len(remaining) == 2 && remaining[1] == "--watch"
 		if len(remaining) > 1 && !watch {
