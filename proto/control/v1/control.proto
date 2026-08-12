@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package hiddify.control.v1;
+
+option go_package = "github.com/1suo/hiddify-tui/gen/control/v1;controlv1";
+
+// ControlService is the versioned, local-only API between thin clients and the
+// daemon. This draft intentionally starts with the read path used by status.
+service ControlService {
+  rpc GetSnapshot(GetSnapshotRequest) returns (Snapshot);
+}
+
+message GetSnapshotRequest {}
+
+message Snapshot {
+  uint32 api_major = 1;
+  uint32 api_minor = 2;
+  string daemon_version = 3;
+  string core_version = 4;
+  ConnectionState connection_state = 5;
+  string active_profile_id = 6;
+  string active_profile_name = 7;
+  string requested_mode = 8;
+  string effective_mode = 9;
+  string selected_outbound = 10;
+  string last_error = 11;
+}
+
+enum ConnectionState {
+  CONNECTION_STATE_UNSPECIFIED = 0;
+  CONNECTION_STATE_STOPPED = 1;
+  CONNECTION_STATE_STARTING = 2;
+  CONNECTION_STATE_STARTED = 3;
+  CONNECTION_STATE_STOPPING = 4;
+  CONNECTION_STATE_RECONNECT_WAIT = 5;
+  CONNECTION_STATE_FAILED = 6;
+}
