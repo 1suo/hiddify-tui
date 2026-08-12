@@ -90,3 +90,34 @@ func Diagnostics(ctx context.Context, daemon control.ServiceReader, jsonOutput b
 	fmt.Fprintf(stdout, "Daemon: %s\nCore: %s\nSocket: %s\nListeners: %v\n", diagnostics.DaemonVersion, diagnostics.CoreVersion, diagnostics.SocketPath, diagnostics.ActiveListeners)
 	return ExitOK
 }
+
+func AgentStatus(ctx context.Context, daemon control.Client, jsonOutput bool, stdout, stderr io.Writer) int {
+	snapshot, err := client.Snapshot(ctx, daemon)
+	if err != nil {
+		fmt.Fprintf(stderr, "agent status: %v\n", err)
+		return ExitUnavailable
+	}
+	if jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(struct {
+			SchemaVersion uint32              `json:"schema_version"`
+			Agent         control.AgentHealth `json:"agent"`
+		}{SchemaVersion: 1, Agent: snapshot.Agent}); err != nil {
+			fmt.Fprintf(stderr, "agent status: %v\n", err)
+			return ExitRejected
+		}
+		return ExitOK
+	}
+	if !snapshot.Agent.Required {
+		fmt.Fprintln(stdout, "Agent: not required")
+		return ExitOK
+	}
+	if snapshot.Agent.Connected {
+		fmt.Fprintln(stdout, "Agent: connected")
+		return ExitOK
+	}
+	fmt.Fprintln(stdout, "Agent: unavailable")
+	if snapshot.Agent.LastError != "" {
+		fmt.Fprintf(stdout, "Last error: %s\n", snapshot.Agent.LastError)
+	}
+	return ExitOK
+}
