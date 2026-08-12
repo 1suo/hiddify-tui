@@ -5,17 +5,20 @@ commit `db74dfc257d5becb4b4e9dbc7257a3dcdde20692` (2026-08-12).
 
 ## Build result
 
-`go test ./...` cannot build this source checkout until its required nested
-repositories are available:
+The parent source declares these nested repositories:
 
 - `hiddify-sing-box` is a git submodule and supplies several local `replace`
   targets, including `wireguard-go` and `psiphon-tls`.
 - `ray2sing` is a git submodule configured with a private SSH URL.
 
-The failure is deterministic: `go test ./...` reports missing
-`hiddify-sing-box/replace/psiphon-tls/go.mod`. This document must be updated
-with a green build and the exact nested dependency revisions before a beta can
-claim compatibility.
+Both were initialized at their parent-pinned revisions for this audit:
+`hiddify-sing-box` `170d8315cab7a8695fd80469073ed2f1d07d63af` and `ray2sing`
+`caf5e9ac03eaba54dc339319670748d32a073a39`. The full suite still fails
+deterministically because the parent `go.mod` replaces dependencies with
+`hiddify-sing-box/replace/psiphon-tls` and
+`hiddify-sing-box/replace/wireguard-go`, but those directories do not exist at
+the pinned `hiddify-sing-box` revision. This source-revision inconsistency must
+be repaired upstream before a beta can claim compatibility.
 
 ## Existing API assessment
 
