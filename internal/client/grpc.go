@@ -98,6 +98,46 @@ func (c *GRPCClient) GetProfile(ctx context.Context, id string) (control.Profile
 	return profileFromProto(response), nil
 }
 
+func (c *GRPCClient) AddRemoteProfile(ctx context.Context, url, name string, active bool) (control.Profile, error) {
+	response, err := c.api.AddRemoteProfile(ctx, &controlv1.AddRemoteProfileRequest{Url: url, Name: name, SetActive: active})
+	if err != nil {
+		return control.Profile{}, fmt.Errorf("add remote profile: %w", err)
+	}
+	return profileFromProto(response), nil
+}
+
+func (c *GRPCClient) UpdateProfileName(ctx context.Context, id, name string) (control.Profile, error) {
+	response, err := c.api.UpdateProfile(ctx, &controlv1.UpdateProfileRequest{ProfileId: id, Name: name})
+	if err != nil {
+		return control.Profile{}, fmt.Errorf("update profile: %w", err)
+	}
+	return profileFromProto(response), nil
+}
+
+func (c *GRPCClient) RefreshProfile(ctx context.Context, id string) error {
+	_, err := c.api.RefreshProfile(ctx, &controlv1.RefreshProfileRequest{ProfileId: id})
+	if err != nil {
+		return fmt.Errorf("refresh profile: %w", err)
+	}
+	return nil
+}
+
+func (c *GRPCClient) DeleteProfile(ctx context.Context, id string) error {
+	_, err := c.api.DeleteProfile(ctx, &controlv1.DeleteProfileRequest{ProfileId: id})
+	if err != nil {
+		return fmt.Errorf("delete profile: %w", err)
+	}
+	return nil
+}
+
+func (c *GRPCClient) SetActiveProfile(ctx context.Context, id string) error {
+	_, err := c.api.SetActiveProfile(ctx, &controlv1.SetActiveProfileRequest{ProfileId: id})
+	if err != nil {
+		return fmt.Errorf("activate profile: %w", err)
+	}
+	return nil
+}
+
 func profileFromProto(profile *controlv1.Profile) control.Profile {
 	return control.Profile{
 		ID:                    profile.GetId(),
@@ -205,4 +245,5 @@ func connectionStateFromProto(state controlv1.ConnectionState) control.Connectio
 var _ control.Client = (*GRPCClient)(nil)
 var _ control.Watcher = (*GRPCClient)(nil)
 var _ control.ProfileReader = (*GRPCClient)(nil)
+var _ control.ProfileWriter = (*GRPCClient)(nil)
 var _ io.Closer = (*GRPCClient)(nil)

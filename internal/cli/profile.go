@@ -61,3 +61,45 @@ func ProfileShow(ctx context.Context, daemon control.ProfileReader, id string, j
 	fmt.Fprintf(stdout, "ID: %s\nName: %s\nType: %s\nActive: %t\nSource: %s\n", profile.ID, profile.Name, profile.Kind, profile.Active, valueOr(profile.RedactedURL, "local"))
 	return ExitOK
 }
+
+func ProfileAddRemote(ctx context.Context, daemon control.ProfileWriter, url, name string, active, jsonOutput bool, stdout, stderr io.Writer) int {
+	profile, err := daemon.AddRemoteProfile(ctx, url, name, active)
+	if err != nil {
+		fmt.Fprintf(stderr, "profile add: %v\n", err)
+		return ExitRejected
+	}
+	return writeProfile(profile, jsonOutput, stdout, stderr)
+}
+
+func ProfileRename(ctx context.Context, daemon control.ProfileWriter, id, name string, jsonOutput bool, stdout, stderr io.Writer) int {
+	profile, err := daemon.UpdateProfileName(ctx, id, name)
+	if err != nil {
+		fmt.Fprintf(stderr, "profile rename: %v\n", err)
+		return ExitRejected
+	}
+	return writeProfile(profile, jsonOutput, stdout, stderr)
+}
+
+func ProfileOperation(ctx context.Context, action, id string, operation func(context.Context, string) error, stdout, stderr io.Writer) int {
+	if err := operation(ctx, id); err != nil {
+		fmt.Fprintf(stderr, "profile %s: %v\n", action, err)
+		return ExitRejected
+	}
+	fmt.Fprintf(stdout, "Profile %s: %s\n", action, id)
+	return ExitOK
+}
+
+func writeProfile(profile control.Profile, jsonOutput bool, stdout, stderr io.Writer) int {
+	if jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(struct {
+			SchemaVersion uint32          `json:"schema_version"`
+			Profile       control.Profile `json:"profile"`
+		}{SchemaVersion: 1, Profile: profile}); err != nil {
+			fmt.Fprintf(stderr, "profile: %v\n", err)
+			return ExitRejected
+		}
+		return ExitOK
+	}
+	fmt.Fprintf(stdout, "Profile: %s (%s)\n", profile.Name, profile.ID)
+	return ExitOK
+}

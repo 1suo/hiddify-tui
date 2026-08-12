@@ -68,14 +68,49 @@ func run(args []string, stdout, stderr io.Writer) int {
 		defer daemon.Close()
 		ctx, cancel = context.WithTimeout(context.Background(), *timeout)
 		defer cancel()
-		switch {
-		case len(remaining) == 2 && remaining[1] == "list":
+		command := remaining[1]
+		switch command {
+		case "list":
+			if len(remaining) != 2 {
+				return profileUsage(stderr)
+			}
 			return cli.ProfileList(ctx, daemon, *jsonOutput, stdout, stderr)
-		case len(remaining) == 3 && remaining[1] == "show":
+		case "show":
+			if len(remaining) != 3 {
+				return profileUsage(stderr)
+			}
 			return cli.ProfileShow(ctx, daemon, remaining[2], *jsonOutput, stdout, stderr)
+		case "add":
+			profileFlags := flag.NewFlagSet("profile add", flag.ContinueOnError)
+			profileFlags.SetOutput(stderr)
+			name := profileFlags.String("name", "", "profile name")
+			active := profileFlags.Bool("activate", false, "make profile active")
+			if err := profileFlags.Parse(remaining[2:]); err != nil || profileFlags.NArg() != 1 {
+				return profileUsage(stderr)
+			}
+			return cli.ProfileAddRemote(ctx, daemon, profileFlags.Arg(0), *name, *active, *jsonOutput, stdout, stderr)
+		case "rename":
+			if len(remaining) != 4 {
+				return profileUsage(stderr)
+			}
+			return cli.ProfileRename(ctx, daemon, remaining[2], remaining[3], *jsonOutput, stdout, stderr)
+		case "activate", "refresh":
+			if len(remaining) != 3 {
+				return profileUsage(stderr)
+			}
+			operation := daemon.SetActiveProfile
+			if command == "refresh" {
+				operation = daemon.RefreshProfile
+			}
+			return cli.ProfileOperation(ctx, command, remaining[2], operation, stdout, stderr)
+		case "delete":
+			if len(remaining) != 4 || remaining[3] != "--yes" {
+				fmt.Fprintln(stderr, "profile delete requires --yes")
+				return cli.ExitUsage
+			}
+			return cli.ProfileOperation(ctx, command, remaining[2], daemon.DeleteProfile, stdout, stderr)
 		default:
-			fmt.Fprintln(stderr, "usage: hiddify-tui [--json] profile list|show ID")
-			return cli.ExitUsage
+			return profileUsage(stderr)
 		}
 	}
 	if len(remaining) >= 1 && remaining[0] == "status" {
@@ -103,6 +138,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cli.ExitUsage
 	}
 	fmt.Fprintln(stderr, "usage: hiddify-tui [--json] status")
+	return cli.ExitUsage
+}
+
+func profileUsage(stderr io.Writer) int {
+	fmt.Fprintln(stderr, "usage: hiddify-tui [--json] profile list|show ID|add [--name NAME] [--activate] URL|rename ID NAME|activate ID|refresh ID|delete ID --yes")
 	return cli.ExitUsage
 }
 

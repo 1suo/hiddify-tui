@@ -133,6 +133,14 @@ type ProfileReader interface {
 	GetProfile(context.Context, string) (Profile, error)
 }
 
+type ProfileWriter interface {
+	AddRemoteProfile(context.Context, string, string, bool) (Profile, error)
+	UpdateProfileName(context.Context, string, string) (Profile, error)
+	RefreshProfile(context.Context, string) error
+	DeleteProfile(context.Context, string) error
+	SetActiveProfile(context.Context, string) error
+}
+
 func (s Snapshot) ValidateCompatibility() error {
 	if s.APIMajor != APIMajor {
 		return fmt.Errorf("control API major version %d is incompatible with client major version %d", s.APIMajor, APIMajor)
