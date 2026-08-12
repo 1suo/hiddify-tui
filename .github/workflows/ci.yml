@@ -38,7 +38,10 @@ jobs:
             suffix=""
             if [ "$goos" = windows ]; then suffix=.exe; fi
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags='-s -w' -o "dist/hiddify-tui-${goos}-${goarch}${suffix}" ./cmd/hiddify-tui
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags='-s -w' -o "dist/hiddify-agent-${goos}-${goarch}${suffix}" ./cmd/hiddify-agent
           done
           find dist -type f -printf '%f %s bytes\n'
           size=$(wc -c < dist/hiddify-tui-linux-amd64)
           test "$size" -le 15728640 || { echo "hiddify-tui exceeds 15 MiB budget: $size bytes"; exit 1; }
+          agent_size=$(wc -c < dist/hiddify-agent-linux-amd64)
+          test "$agent_size" -le 8388608 || { echo "hiddify-agent exceeds 8 MiB budget: $agent_size bytes"; exit 1; }
