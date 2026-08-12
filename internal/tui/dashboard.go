@@ -17,17 +17,21 @@ import (
 // Dashboard is the first interactive screen. Quitting it never disconnects the
 // daemon; connection actions are explicit local-control requests.
 type Dashboard struct {
-	snapshot   control.Snapshot
-	err        error
-	width      int
-	height     int
-	updates    <-chan dashboardUpdate
-	page       page
-	profiles   []control.Profile
-	groups     []control.OutboundGroup
-	connection control.ConnectionOperator
-	ctx        context.Context
-	action     string
+	snapshot          control.Snapshot
+	err               error
+	width             int
+	height            int
+	updates           <-chan dashboardUpdate
+	page              page
+	profiles          []control.Profile
+	groups            []control.OutboundGroup
+	connection        control.ConnectionOperator
+	profilesAPI       control.ProfileWriter
+	outboundsAPI      control.OutboundOperator
+	ctx               context.Context
+	action            string
+	cursor            int
+	confirmDisconnect bool
 }
 
 type page string
@@ -47,7 +51,7 @@ type dashboardUpdate struct {
 	groups   []control.OutboundGroup
 }
 
-type connectionActionResult struct {
+type actionResult struct {
 	action string
 	err    error
 }
@@ -61,6 +65,9 @@ func (m Dashboard) Init() tea.Cmd { return waitForDashboardUpdate(m.updates) }
 func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
+		if msg.String() != "x" {
+			m.confirmDisconnect = false
+		}
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -68,8 +75,10 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.page = pageDashboard
 		case "2", "p":
 			m.page = pageProfiles
+			m.cursor = 0
 		case "3", "o":
 			m.page = pageOutbounds
+			m.cursor = 0
 		case "4", "l":
 			m.page = pageLogs
 		case "5", "s":
@@ -77,16 +86,30 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "c":
 			return m, m.connectionAction("connect")
 		case "x":
+			if !m.confirmDisconnect {
+				m.confirmDisconnect = true
+				m.action = "Press x again to disconnect"
+				return m, nil
+			}
+			m.confirmDisconnect = false
 			return m, m.connectionAction("disconnect")
 		case "r":
 			return m, m.connectionAction("restart")
+		case "up", "k":
+			m.moveCursor(-1)
+		case "down", "j":
+			m.moveCursor(1)
+		case "enter":
+			return m, m.selectionAction(false)
+		case "t":
+			return m, m.selectionAction(true)
 		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case dashboardUpdate:
 		m.snapshot, m.err, m.profiles, m.groups = msg.snapshot, msg.err, msg.profiles, msg.groups
 		return m, waitForDashboardUpdate(m.updates)
-	case connectionActionResult:
+	case actionResult:
 		if msg.err != nil {
 			m.action = fmt.Sprintf("%s failed: %v", msg.action, msg.err)
 		} else {
@@ -116,7 +139,7 @@ func (m Dashboard) View() tea.View {
 	if m.action != "" {
 		content += "\n\n" + m.action
 	}
-	content += "\n\n1 Dashboard  2 Profiles  3 Outbounds  4 Logs  5 Settings\nc connect  x disconnect  r restart  q / Ctrl+C quit (connection stays active)"
+	content += "\n\n1 Dashboard  2 Profiles  3 Outbounds  4 Logs  5 Settings\nc connect  x disconnect  r restart  ↑/↓ select  Enter activate/select  t test outbound\nq / Ctrl+C quit (connection stays active)"
 
 	view := tea.NewView(content)
 	view.AltScreen = true
@@ -140,12 +163,16 @@ func (m Dashboard) profilesView() string {
 	if len(m.profiles) == 0 {
 		return content + "\nNo profiles available.\nUse hiddify-tui profile add or profile add-file."
 	}
-	for _, profile := range m.profiles {
+	for index, profile := range m.profiles {
 		active := " "
 		if profile.Active {
 			active = "*"
 		}
-		content += fmt.Sprintf("\n%s %s  [%s]  %s", active, profile.Name, profile.Kind, valueOr(profile.RedactedURL, "local"))
+		cursor := " "
+		if index == m.cursor {
+			cursor = ">"
+		}
+		content += fmt.Sprintf("\n%s%s %s  [%s]  %s", cursor, active, profile.Name, profile.Kind, valueOr(profile.RedactedURL, "local"))
 	}
 	return content
 }
@@ -155,6 +182,7 @@ func (m Dashboard) outboundsView() string {
 	if len(m.groups) == 0 {
 		return content + "\nNo outbounds available."
 	}
+	index := 0
 	for _, group := range m.groups {
 		content += "\n\n" + group.Name
 		for _, outbound := range group.Outbounds {
@@ -166,7 +194,12 @@ func (m Dashboard) outboundsView() string {
 			if outbound.DelayMillis > 0 {
 				delay = fmt.Sprintf("%d ms", outbound.DelayMillis)
 			}
-			content += fmt.Sprintf("\n%s %s  %s  %s", selected, outbound.Tag, outbound.Protocol, delay)
+			cursor := " "
+			if index == m.cursor {
+				cursor = ">"
+			}
+			content += fmt.Sprintf("\n%s%s %s  %s  %s", cursor, selected, outbound.Tag, outbound.Protocol, delay)
+			index++
 		}
 	}
 	return content
@@ -192,6 +225,8 @@ func RunLive(ctx context.Context, daemon control.Client, watcher control.Watcher
 	model.updates = updates
 	model.ctx = ctx
 	model.connection, _ = daemon.(control.ConnectionOperator)
+	model.profilesAPI, _ = daemon.(control.ProfileWriter)
+	model.outboundsAPI, _ = daemon.(control.OutboundOperator)
 	go streamDashboard(watchCtx, daemon, watcher, updates)
 	_, runErr := tea.NewProgram(model).Run()
 	if errors.Is(runErr, tea.ErrInterrupted) {
@@ -203,7 +238,7 @@ func RunLive(ctx context.Context, daemon control.Client, watcher control.Watcher
 func (m Dashboard) connectionAction(action string) tea.Cmd {
 	if m.connection == nil {
 		return func() tea.Msg {
-			return connectionActionResult{action: action, err: errors.New("daemon does not support connection controls")}
+			return actionResult{action: action, err: errors.New("daemon does not support connection controls")}
 		}
 	}
 	return func() tea.Msg {
@@ -216,8 +251,67 @@ func (m Dashboard) connectionAction(action string) tea.Cmd {
 		case "restart":
 			err = m.connection.Restart(m.ctx)
 		}
-		return connectionActionResult{action: action, err: err}
+		return actionResult{action: action, err: err}
 	}
+}
+
+func (m *Dashboard) moveCursor(delta int) {
+	limit := 0
+	if m.page == pageProfiles {
+		limit = len(m.profiles)
+	}
+	if m.page == pageOutbounds {
+		limit = len(m.outboundChoices())
+	}
+	if limit == 0 {
+		m.cursor = 0
+		return
+	}
+	m.cursor = (m.cursor + delta + limit) % limit
+}
+
+type outboundChoice struct {
+	groupID  string
+	outbound control.Outbound
+}
+
+func (m Dashboard) outboundChoices() []outboundChoice {
+	var choices []outboundChoice
+	for _, group := range m.groups {
+		for _, outbound := range group.Outbounds {
+			choices = append(choices, outboundChoice{group.ID, outbound})
+		}
+	}
+	return choices
+}
+
+func (m Dashboard) selectionAction(test bool) tea.Cmd {
+	if m.page == pageProfiles {
+		if m.profilesAPI == nil || m.cursor >= len(m.profiles) {
+			return nil
+		}
+		profile := m.profiles[m.cursor]
+		return func() tea.Msg {
+			return actionResult{action: "activate profile", err: m.profilesAPI.SetActiveProfile(m.ctx, profile.ID)}
+		}
+	}
+	if m.page == pageOutbounds {
+		choices := m.outboundChoices()
+		if m.outboundsAPI == nil || m.cursor >= len(choices) {
+			return nil
+		}
+		choice := choices[m.cursor]
+		return func() tea.Msg {
+			if test {
+				return actionResult{action: "test outbound", err: m.outboundsAPI.TestOutbounds(m.ctx, control.TestScope{OutboundID: choice.outbound.ID})}
+			}
+			if !choice.outbound.Selectable {
+				return actionResult{action: "select outbound", err: errors.New("outbound is not selectable")}
+			}
+			return actionResult{action: "select outbound", err: m.outboundsAPI.SelectOutbound(m.ctx, choice.groupID, choice.outbound.ID)}
+		}
+	}
+	return nil
 }
 
 func waitForDashboardUpdate(updates <-chan dashboardUpdate) tea.Cmd {

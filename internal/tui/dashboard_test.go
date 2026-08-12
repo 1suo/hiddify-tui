@@ -53,7 +53,7 @@ func TestDashboardRequestsConnectionActions(t *testing.T) {
 	model.ctx = context.Background()
 
 	updated, command := model.Update(tea.KeyPressMsg(tea.Key{Text: "c"}))
-	if result, ok := command().(connectionActionResult); !ok || result.err != nil {
+	if result, ok := command().(actionResult); !ok || result.err != nil {
 		t.Fatalf("connect result = %#v", command())
 	}
 	if operator.connects != 1 {
@@ -61,7 +61,11 @@ func TestDashboardRequestsConnectionActions(t *testing.T) {
 	}
 	model = updated.(Dashboard)
 	updated, command = model.Update(tea.KeyPressMsg(tea.Key{Text: "x"}))
-	if result, ok := command().(connectionActionResult); !ok || result.err != nil {
+	if command != nil {
+		t.Fatal("first disconnect key must request confirmation")
+	}
+	updated, command = updated.(Dashboard).Update(tea.KeyPressMsg(tea.Key{Text: "x"}))
+	if result, ok := command().(actionResult); !ok || result.err != nil {
 		t.Fatalf("disconnect result = %#v", command())
 	}
 	if operator.disconnects != 1 {
@@ -69,12 +73,73 @@ func TestDashboardRequestsConnectionActions(t *testing.T) {
 	}
 	model = updated.(Dashboard)
 	_, command = model.Update(tea.KeyPressMsg(tea.Key{Text: "r"}))
-	if result, ok := command().(connectionActionResult); !ok || result.err != nil {
+	if result, ok := command().(actionResult); !ok || result.err != nil {
 		t.Fatalf("restart result = %#v", command())
 	}
 	if operator.restarts != 1 {
 		t.Fatalf("restart requests = %d, want 1", operator.restarts)
 	}
+}
+
+func TestDashboardRequiresSecondDisconnectKey(t *testing.T) {
+	operator := &recordingConnectionOperator{}
+	model := NewDashboard(control.Snapshot{}, nil)
+	model.connection, model.ctx = operator, context.Background()
+	updated, command := model.Update(tea.KeyPressMsg(tea.Key{Text: "x"}))
+	if command != nil || operator.disconnects != 0 || !strings.Contains(updated.(Dashboard).View().Content, "Press x again") {
+		t.Fatal("first x must only request confirmation")
+	}
+	_, command = updated.(Dashboard).Update(tea.KeyPressMsg(tea.Key{Text: "x"}))
+	if result, ok := command().(actionResult); !ok || result.err != nil || operator.disconnects != 1 {
+		t.Fatalf("confirmed disconnect = %#v", command())
+	}
+}
+
+func TestDashboardActivatesProfileAndSelectsOutbound(t *testing.T) {
+	profileAPI := &recordingProfileWriter{}
+	outboundAPI := &recordingOutboundOperator{}
+	model := NewDashboard(control.Snapshot{}, nil)
+	model.ctx, model.profilesAPI, model.outboundsAPI = context.Background(), profileAPI, outboundAPI
+	model.profiles = []control.Profile{{ID: "profile-1", Name: "Home"}}
+	model.page = pageProfiles
+	_, command := model.Update(tea.KeyPressMsg(tea.Key{Text: "enter"}))
+	if result, ok := command().(actionResult); !ok || result.err != nil || profileAPI.active != "profile-1" {
+		t.Fatalf("activate = %#v", command())
+	}
+	model.page = pageOutbounds
+	model.groups = []control.OutboundGroup{{ID: "group-1", Outbounds: []control.Outbound{{ID: "outbound-1", Selectable: true}}}}
+	_, command = model.Update(tea.KeyPressMsg(tea.Key{Text: "enter"}))
+	if result, ok := command().(actionResult); !ok || result.err != nil || outboundAPI.selected != "group-1/outbound-1" {
+		t.Fatalf("select = %#v", command())
+	}
+}
+
+type recordingProfileWriter struct{ active string }
+
+func (r *recordingProfileWriter) AddRemoteProfile(context.Context, string, string, bool) (control.Profile, error) {
+	panic("unused")
+}
+func (r *recordingProfileWriter) UpdateProfileName(context.Context, string, string) (control.Profile, error) {
+	panic("unused")
+}
+func (r *recordingProfileWriter) RefreshProfile(context.Context, string) error { panic("unused") }
+func (r *recordingProfileWriter) DeleteProfile(context.Context, string) error  { panic("unused") }
+func (r *recordingProfileWriter) SetActiveProfile(_ context.Context, id string) error {
+	r.active = id
+	return nil
+}
+
+type recordingOutboundOperator struct{ selected string }
+
+func (r *recordingOutboundOperator) ListOutboundGroups(context.Context) ([]control.OutboundGroup, error) {
+	return nil, nil
+}
+func (r *recordingOutboundOperator) SelectOutbound(_ context.Context, group, outbound string) error {
+	r.selected = group + "/" + outbound
+	return nil
+}
+func (r *recordingOutboundOperator) TestOutbounds(context.Context, control.TestScope) error {
+	return nil
 }
 
 type recordingConnectionOperator struct {
