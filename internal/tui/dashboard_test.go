@@ -57,6 +57,16 @@ func TestDashboardAppliesLiveUpdate(t *testing.T) {
 	}
 }
 
+func TestDashboardNavigatesToProfiles(t *testing.T) {
+	model := NewDashboard(control.Snapshot{}, nil)
+	model.profiles = []control.Profile{{Name: "Home", Kind: control.ProfileRemote, Active: true, RedactedURL: "https://example.test/…"}}
+	updated, _ := model.Update(tea.KeyPressMsg(tea.Key{Text: "p"}))
+	view := updated.(Dashboard).View().Content
+	if !strings.Contains(view, "Profiles") || !strings.Contains(view, "Home") {
+		t.Fatalf("profiles view:\n%s", view)
+	}
+}
+
 func TestStreamDashboardAppliesEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
