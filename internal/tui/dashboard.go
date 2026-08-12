@@ -25,13 +25,16 @@ type Dashboard struct {
 	page              page
 	profiles          []control.Profile
 	groups            []control.OutboundGroup
+	logs              []control.LogEntry
 	connection        control.ConnectionOperator
 	profilesAPI       control.ProfileWriter
 	outboundsAPI      control.OutboundOperator
+	logsAPI           control.LogReader
 	ctx               context.Context
 	action            string
 	cursor            int
 	confirmDisconnect bool
+	confirmLogClear   bool
 }
 
 type page string
@@ -49,6 +52,7 @@ type dashboardUpdate struct {
 	err      error
 	profiles []control.Profile
 	groups   []control.OutboundGroup
+	logs     []control.LogEntry
 }
 
 type actionResult struct {
@@ -67,6 +71,9 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		if msg.String() != "x" {
 			m.confirmDisconnect = false
+		}
+		if msg.String() != "C" {
+			m.confirmLogClear = false
 		}
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -103,11 +110,22 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.selectionAction(false)
 		case "t":
 			return m, m.selectionAction(true)
+		case "C":
+			if m.page != pageLogs {
+				return m, nil
+			}
+			if !m.confirmLogClear {
+				m.confirmLogClear = true
+				m.action = "Press C again to clear the daemon log buffer"
+				return m, nil
+			}
+			m.confirmLogClear = false
+			return m, m.clearLogsAction()
 		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case dashboardUpdate:
-		m.snapshot, m.err, m.profiles, m.groups = msg.snapshot, msg.err, msg.profiles, msg.groups
+		m.snapshot, m.err, m.profiles, m.groups, m.logs = msg.snapshot, msg.err, msg.profiles, msg.groups, msg.logs
 		return m, waitForDashboardUpdate(m.updates)
 	case actionResult:
 		if msg.err != nil {
@@ -127,7 +145,7 @@ func (m Dashboard) View() tea.View {
 	case pageOutbounds:
 		content = m.outboundsView()
 	case pageLogs:
-		content = "Logs\n\nUse hiddify-tui logs --follow for a scriptable live stream.\nDaemon-side redaction is always preserved."
+		content = m.logsView()
 	case pageSettings:
 		content = "Settings\n\nUse hiddify-tui settings show|validate|set|import|export.\nSettings changes are validated and committed by the daemon."
 	default:
@@ -139,7 +157,7 @@ func (m Dashboard) View() tea.View {
 	if m.action != "" {
 		content += "\n\n" + m.action
 	}
-	content += "\n\n1 Dashboard  2 Profiles  3 Outbounds  4 Logs  5 Settings\nc connect  x disconnect  r restart  ↑/↓ select  Enter activate/select  t test outbound\nq / Ctrl+C quit (connection stays active)"
+	content += "\n\n1 Dashboard  2 Profiles  3 Outbounds  4 Logs  5 Settings\nc connect  x disconnect  r restart  ↑/↓ select  Enter activate/select  t test outbound  C clear logs\nq / Ctrl+C quit (connection stays active)"
 
 	view := tea.NewView(content)
 	view.AltScreen = true
@@ -205,6 +223,18 @@ func (m Dashboard) outboundsView() string {
 	return content
 }
 
+func (m Dashboard) logsView() string {
+	if len(m.logs) == 0 {
+		return "Logs\n\nNo daemon log entries in the bounded buffer.\nDaemon-side redaction is always preserved."
+	}
+	content := "Logs\n"
+	for _, entry := range m.logs {
+		timestamp := time.Unix(0, entry.TimestampUnix).Format("15:04:05")
+		content += fmt.Sprintf("\n%s %-5s %-12s %s", timestamp, entry.Level, entry.Component, entry.Message)
+	}
+	return content
+}
+
 // Run opens the alternate-screen dashboard. Ctrl+C is a normal detach.
 func Run(snapshot control.Snapshot, err error) error {
 	_, runErr := tea.NewProgram(NewDashboard(snapshot, err)).Run()
@@ -227,6 +257,7 @@ func RunLive(ctx context.Context, daemon control.Client, watcher control.Watcher
 	model.connection, _ = daemon.(control.ConnectionOperator)
 	model.profilesAPI, _ = daemon.(control.ProfileWriter)
 	model.outboundsAPI, _ = daemon.(control.OutboundOperator)
+	model.logsAPI, _ = daemon.(control.LogReader)
 	go streamDashboard(watchCtx, daemon, watcher, updates)
 	_, runErr := tea.NewProgram(model).Run()
 	if errors.Is(runErr, tea.ErrInterrupted) {
@@ -253,6 +284,15 @@ func (m Dashboard) connectionAction(action string) tea.Cmd {
 		}
 		return actionResult{action: action, err: err}
 	}
+}
+
+func (m Dashboard) clearLogsAction() tea.Cmd {
+	if m.logsAPI == nil {
+		return func() tea.Msg {
+			return actionResult{action: "clear logs", err: errors.New("daemon does not support log controls")}
+		}
+	}
+	return func() tea.Msg { return actionResult{action: "clear logs", err: m.logsAPI.ClearLogs(m.ctx)} }
 }
 
 func (m *Dashboard) moveCursor(delta int) {
@@ -338,6 +378,9 @@ func streamDashboard(ctx context.Context, daemon control.Client, watcher control
 			if operator, ok := daemon.(control.OutboundOperator); ok {
 				update.groups, _ = operator.ListOutboundGroups(ctx)
 			}
+			if reader, ok := daemon.(control.LogReader); ok {
+				update.logs = loadLogTail(ctx, reader)
+			}
 			sendDashboardUpdate(ctx, updates, update)
 			err = state.Watch(ctx, daemon, watcher)
 		}
@@ -357,6 +400,21 @@ func streamDashboard(ctx context.Context, daemon control.Client, watcher control
 			backoff *= 2
 		}
 	}
+}
+
+func loadLogTail(ctx context.Context, reader control.LogReader) []control.LogEntry {
+	entries, err := reader.TailLogs(ctx, 100, control.LogInfo, false)
+	if err != nil {
+		return nil
+	}
+	var result []control.LogEntry
+	for entry := range entries {
+		result = append(result, entry)
+		if len(result) == 100 {
+			break
+		}
+	}
+	return result
 }
 
 func sendDashboardUpdate(ctx context.Context, updates chan<- dashboardUpdate, update dashboardUpdate) {

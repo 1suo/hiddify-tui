@@ -184,6 +184,33 @@ func TestDashboardNavigatesToProfiles(t *testing.T) {
 	}
 }
 
+func TestDashboardRendersAndConfirmsLogClear(t *testing.T) {
+	reader := &recordingLogReader{}
+	model := NewDashboard(control.Snapshot{}, nil)
+	model.page, model.ctx, model.logsAPI = pageLogs, context.Background(), reader
+	model.logs = []control.LogEntry{{TimestampUnix: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC).UnixNano(), Level: control.LogWarn, Component: "core", Message: "redacted message"}}
+	if view := model.View().Content; !strings.Contains(view, "warn  core") || !strings.Contains(view, "redacted message") {
+		t.Fatalf("logs view: %s", view)
+	}
+	updated, command := model.Update(tea.KeyPressMsg(tea.Key{Text: "C"}))
+	if command != nil || reader.clears != 0 {
+		t.Fatal("first C must only request confirmation")
+	}
+	_, command = updated.(Dashboard).Update(tea.KeyPressMsg(tea.Key{Text: "C"}))
+	if result, ok := command().(actionResult); !ok || result.err != nil || reader.clears != 1 {
+		t.Fatalf("clear result = %#v", command())
+	}
+}
+
+type recordingLogReader struct{ clears int }
+
+func (r *recordingLogReader) TailLogs(context.Context, uint32, control.LogLevel, bool) (<-chan control.LogEntry, error) {
+	entries := make(chan control.LogEntry)
+	close(entries)
+	return entries, nil
+}
+func (r *recordingLogReader) ClearLogs(context.Context) error { r.clears++; return nil }
+
 func TestStreamDashboardAppliesEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
