@@ -7,10 +7,9 @@
     <key>ProgramArguments</key>
     <array>
         <string>/Library/Application Support/Hiddify/hiddify-core</string>
-        <string>daemon</string>
         <string>run</string>
-        <string>--state-dir=/Library/Application Support/Hiddify</string>
-        <string>--socket=/var/run/hiddify/control.sock</string>
+        <string>-c</string>
+        <string>/Library/Application Support/Hiddify/active-config.json</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -25,7 +24,5 @@
     <string>Background</string>
     <key>StandardErrorPath</key>
     <string>/var/log/hiddify-core.log</string>
-    <key>Umask</key>
-    <integer>63</integer>
 </dict>
 </plist>

@@ -2,66 +2,58 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"text/tabwriter"
 
-	"github.com/1suo/hiddify-tui/internal/control"
+	"github.com/1suo/hiddify-tui/internal/client"
 )
 
-func OutboundList(ctx context.Context, daemon control.OutboundOperator, jsonOutput bool, stdout, stderr io.Writer) int {
-	groups, err := daemon.ListOutboundGroups(ctx)
+// OutboundList prints the current outbound groups.
+func OutboundList(ctx context.Context, core client.Client, jsonOutput bool, stdout, stderr io.Writer) int {
+	groups, err := core.OutboundGroups(ctx)
 	if err != nil {
-		fmt.Fprintf(stderr, "outbound list: %v\n", err)
+		WriteError(stderr, "outbound list", err)
 		return ExitUnavailable
 	}
 	if jsonOutput {
-		if err := json.NewEncoder(stdout).Encode(struct {
-			SchemaVersion uint32                  `json:"schema_version"`
-			Groups        []control.OutboundGroup `json:"groups"`
-		}{SchemaVersion: 1, Groups: groups}); err != nil {
-			fmt.Fprintf(stderr, "outbound list: %v\n", err)
+		if err := writeJSON(stdout, groups); err != nil {
 			return ExitRejected
 		}
 		return ExitOK
 	}
-	writer := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(writer, "GROUP\tSELECTED\tTAG\tPROTOCOL\tDELAY")
 	for _, group := range groups {
-		for _, outbound := range group.Outbounds {
-			selected := ""
-			if group.SelectedOutboundID == outbound.ID {
+		fmt.Fprintf(stdout, "%s [%s]\n", group.Tag, group.Type)
+		for _, item := range group.Items {
+			selected := " "
+			if item.Selected {
 				selected = "*"
 			}
 			delay := "-"
-			if outbound.DelayMillis > 0 {
-				delay = fmt.Sprintf("%d ms", outbound.DelayMillis)
+			if item.DelayMillis > 0 {
+				delay = fmt.Sprintf("%d ms", item.DelayMillis)
 			}
-			fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n", group.Name, selected, outbound.Tag, outbound.Protocol, delay)
+			fmt.Fprintf(stdout, "  %s %s  %s  %s\n", selected, item.Tag, item.Type, delay)
 		}
 	}
-	if err := writer.Flush(); err != nil {
-		fmt.Fprintf(stderr, "outbound list: %v\n", err)
-		return ExitRejected
-	}
 	return ExitOK
 }
 
-func OutboundSelect(ctx context.Context, daemon control.OutboundOperator, groupID, outboundID string, stdout, stderr io.Writer) int {
-	if err := daemon.SelectOutbound(ctx, groupID, outboundID); err != nil {
-		fmt.Fprintf(stderr, "outbound select: %v\n", err)
+// OutboundSelect selects an outbound within a group.
+func OutboundSelect(ctx context.Context, core client.Client, group, outbound string, stdout, stderr io.Writer) int {
+	if err := core.SelectOutbound(ctx, group, outbound); err != nil {
+		WriteError(stderr, "outbound select", err)
 		return ExitRejected
 	}
-	fmt.Fprintf(stdout, "Outbound selected: %s\n", outboundID)
+	fmt.Fprintf(stdout, "selected %s in %s\n", outbound, group)
 	return ExitOK
 }
 
-func OutboundTest(ctx context.Context, daemon control.OutboundOperator, scope control.TestScope, stdout, stderr io.Writer) int {
-	if err := daemon.TestOutbounds(ctx, scope); err != nil {
-		fmt.Fprintf(stderr, "outbound test: %v\n", err)
+// OutboundTest runs a URL test on one outbound.
+func OutboundTest(ctx context.Context, core client.Client, tag string, stdout, stderr io.Writer) int {
+	if err := core.TestOutbound(ctx, tag); err != nil {
+		WriteError(stderr, "outbound test", err)
 		return ExitRejected
 	}
-	fmt.Fprintln(stdout, "Outbound test requested")
+	fmt.Fprintf(stdout, "tested %s\n", tag)
 	return ExitOK
 }

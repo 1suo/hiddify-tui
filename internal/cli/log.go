@@ -5,36 +5,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"time"
 
-	"github.com/1suo/hiddify-tui/internal/control"
+	"github.com/1suo/hiddify-tui/internal/client"
 )
 
-func Logs(ctx context.Context, daemon control.LogReader, tail uint32, level control.LogLevel, follow, jsonOutput bool, stdout, stderr io.Writer) int {
-	entries, err := daemon.TailLogs(ctx, tail, level, follow)
+// Logs streams the core's log output until ctx ends or the stream closes.
+func Logs(ctx context.Context, core client.Client, level client.LogLevel, jsonOutput bool, stdout, stderr io.Writer) int {
+	entries, err := core.WatchLogs(ctx, level)
 	if err != nil {
-		fmt.Fprintf(stderr, "logs: %v\n", err)
+		WriteError(stderr, "logs", err)
 		return ExitUnavailable
 	}
 	for entry := range entries {
 		if jsonOutput {
 			if err := json.NewEncoder(stdout).Encode(entry); err != nil {
-				fmt.Fprintf(stderr, "logs: %v\n", err)
 				return ExitRejected
 			}
 			continue
 		}
-		timestamp := time.Unix(0, entry.TimestampUnix).Format(time.RFC3339)
-		fmt.Fprintf(stdout, "%s %-5s %-12s %s\n", timestamp, entry.Level, entry.Component, entry.Message)
+		fmt.Fprintf(stdout, "%s %-5s %-10s %s\n", entry.Time.Format("15:04:05"), entry.Level, entry.Component, entry.Message)
 	}
-	return ExitOK
-}
-
-func ClearLogs(ctx context.Context, daemon control.LogReader, stdout, stderr io.Writer) int {
-	if err := daemon.ClearLogs(ctx); err != nil {
-		fmt.Fprintf(stderr, "logs clear: %v\n", err)
-		return ExitRejected
-	}
-	fmt.Fprintln(stdout, "Daemon log buffer cleared")
 	return ExitOK
 }

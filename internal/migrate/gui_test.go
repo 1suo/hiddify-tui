@@ -4,13 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/1suo/hiddify-tui/internal/control"
+	"github.com/1suo/hiddify-tui/internal/profile"
 	_ "modernc.org/sqlite"
 )
 
@@ -65,33 +64,19 @@ func TestReadPlanDoesNotModifyGUIData(t *testing.T) {
 	}
 }
 
-func TestApplyImportsAndActivatesSuccessfulProfile(t *testing.T) {
-	target := &fakeTarget{}
+func TestApplyImportsLocalProfile(t *testing.T) {
+	store, err := profile.Open(filepath.Join(t.TempDir(), "profiles.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	result := Apply(context.Background(), Plan{Profiles: []Profile{
-		{SourceID: "remote", Kind: "remote", Name: "Remote", URL: "https://example.test/sub"},
 		{SourceID: "local", Kind: "local", Name: "Local", Content: []byte(`{"inbounds":[]}`), Active: true},
-	}}, target)
-	if len(result.Imported) != 2 || target.active != "local" || target.localContent != `{"inbounds":[]}` {
-		t.Fatalf("result=%#v target=%#v", result, target)
+	}}, store)
+	if len(result.Imported) != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	active, ok := store.Active()
+	if !ok || active.Name != "Local" || active.Content != `{"inbounds":[]}` {
+		t.Fatalf("active = %#v ok=%t", active, ok)
 	}
 }
-
-type fakeTarget struct {
-	active       string
-	localContent string
-}
-
-func (f *fakeTarget) AddRemoteProfile(_ context.Context, _ string, _ string, _ bool) (control.Profile, error) {
-	return control.Profile{ID: "remote"}, nil
-}
-func (f *fakeTarget) AddLocalProfile(_ context.Context, _ string, _ bool, content io.Reader) (control.Profile, error) {
-	data, _ := io.ReadAll(content)
-	f.localContent = string(data)
-	return control.Profile{ID: "local"}, nil
-}
-func (f *fakeTarget) UpdateProfileName(context.Context, string, string) (control.Profile, error) {
-	panic("unused")
-}
-func (f *fakeTarget) RefreshProfile(context.Context, string) error        { panic("unused") }
-func (f *fakeTarget) DeleteProfile(context.Context, string) error         { panic("unused") }
-func (f *fakeTarget) SetActiveProfile(_ context.Context, id string) error { f.active = id; return nil }

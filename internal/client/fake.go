@@ -2,59 +2,87 @@ package client
 
 import (
 	"context"
-	"errors"
-	"fmt"
-
-	"github.com/1suo/hiddify-tui/internal/control"
 )
 
-// FakeControl is a deterministic in-memory control endpoint for client tests.
-type FakeControl struct {
-	Snapshot control.Snapshot
-	Err      error
-	Events   []control.Event
-	Profiles []control.Profile
+// FakeClient is a deterministic in-memory Client for tests.
+type FakeClient struct {
+	SnapshotFn   func() Snapshot
+	StatusEvents []Snapshot
+	Groups       []OutboundGroup
+	Logs         []LogEntry
+	ParseErr     error
+	Connects     int
+	Disconnects  int
+	Restarts     int
+	connectErr   error
 }
 
-func (f FakeControl) ListProfiles(context.Context) ([]control.Profile, error) {
-	if f.Err != nil {
-		return nil, f.Err
-	}
-	return f.Profiles, nil
+func (f *FakeClient) Connect(context.Context, string, string) error {
+	f.Connects++
+	return f.connectErr
 }
 
-func (f FakeControl) GetProfile(_ context.Context, id string) (control.Profile, error) {
-	if f.Err != nil {
-		return control.Profile{}, f.Err
+func (f *FakeClient) Disconnect(context.Context) error {
+	f.Disconnects++
+	return nil
+}
+
+func (f *FakeClient) Restart(context.Context, string, string) error {
+	f.Restarts++
+	return nil
+}
+
+func (f *FakeClient) Snapshot(context.Context) (Snapshot, error) {
+	if f.SnapshotFn != nil {
+		return f.SnapshotFn(), nil
 	}
-	for _, profile := range f.Profiles {
-		if profile.ID == id {
-			return profile, nil
+	return Snapshot{State: StateStopped}, nil
+}
+
+func (f *FakeClient) WatchStatus(ctx context.Context) (<-chan Snapshot, error) {
+	out := make(chan Snapshot)
+	go func() {
+		defer close(out)
+		for _, snapshot := range f.StatusEvents {
+			select {
+			case out <- snapshot:
+			case <-ctx.Done():
+				return
+			}
 		}
-	}
-	return control.Profile{}, fmt.Errorf("profile %q not found", id)
+		<-ctx.Done()
+	}()
+	return out, nil
 }
 
-func (f FakeControl) WatchEvents(ctx context.Context, afterSequence uint64) (<-chan control.Event, error) {
-	if f.Err != nil {
-		return nil, f.Err
-	}
-	events := make(chan control.Event, len(f.Events))
-	for _, event := range f.Events {
-		if event.Sequence > afterSequence {
-			events <- event
+func (f *FakeClient) OutboundGroups(context.Context) ([]OutboundGroup, error) {
+	return f.Groups, nil
+}
+
+func (f *FakeClient) SelectOutbound(context.Context, string, string) error { return nil }
+
+func (f *FakeClient) TestOutbound(context.Context, string) error { return nil }
+
+func (f *FakeClient) Parse(context.Context, string) error { return f.ParseErr }
+
+func (f *FakeClient) ChangeSettings(context.Context, string) error { return nil }
+
+func (f *FakeClient) WatchLogs(ctx context.Context, _ LogLevel) (<-chan LogEntry, error) {
+	out := make(chan LogEntry)
+	go func() {
+		defer close(out)
+		for _, entry := range f.Logs {
+			select {
+			case out <- entry:
+			case <-ctx.Done():
+				return
+			}
 		}
-	}
-	close(events)
-	return events, nil
+		<-ctx.Done()
+	}()
+	return out, nil
 }
 
-func (f FakeControl) GetSnapshot(context.Context) (control.Snapshot, error) {
-	if f.Err != nil {
-		return control.Snapshot{}, f.Err
-	}
-	if f.Snapshot.APIMajor == 0 {
-		return control.Snapshot{}, errors.New("fake snapshot has no API major version")
-	}
-	return f.Snapshot, nil
-}
+func (f *FakeClient) Close() error { return nil }
+
+var _ Client = (*FakeClient)(nil)

@@ -6,36 +6,64 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/1suo/hiddify-tui/internal/control"
+	"github.com/1suo/hiddify-tui/internal/client"
+	"github.com/1suo/hiddify-tui/internal/profile"
 )
 
-func ConnectionOperation(ctx context.Context, daemon control.ConnectionOperator, action string, profileID string, mode control.ConnectionMode, jsonOutput bool, stdout, stderr io.Writer) int {
-	var err error
-	switch action {
-	case "connect":
-		err = daemon.Connect(ctx, profileID, mode)
-	case "disconnect":
-		err = daemon.Disconnect(ctx)
-	case "restart":
-		err = daemon.Restart(ctx)
-	default:
-		fmt.Fprintf(stderr, "%s: unsupported connection operation\n", action)
-		return ExitUsage
-	}
-	if err != nil {
-		fmt.Fprintf(stderr, "%s: %v\n", action, err)
+type operationOutput struct {
+	Action string `json:"action"`
+}
+
+// Connect starts the active profile, or the one given by profileID.
+func Connect(ctx context.Context, core client.Client, store *profile.Store, profileID string, jsonOutput bool, stdout, stderr io.Writer) int {
+	target, ok := activeOr(store, profileID)
+	if !ok {
+		WriteError(stderr, "connect", fmt.Errorf("no active profile"))
 		return ExitRejected
 	}
+	if err := core.Connect(ctx, target.Content, target.Name); err != nil {
+		WriteError(stderr, "connect", err)
+		return ExitRejected
+	}
+	return operationResult("connect", jsonOutput, stdout)
+}
+
+// Disconnect stops the core.
+func Disconnect(ctx context.Context, core client.Client, jsonOutput bool, stdout, stderr io.Writer) int {
+	if err := core.Disconnect(ctx); err != nil {
+		WriteError(stderr, "disconnect", err)
+		return ExitRejected
+	}
+	return operationResult("disconnect", jsonOutput, stdout)
+}
+
+// Restart restarts the active profile.
+func Restart(ctx context.Context, core client.Client, store *profile.Store, jsonOutput bool, stdout, stderr io.Writer) int {
+	target, ok := store.Active()
+	if !ok {
+		WriteError(stderr, "restart", fmt.Errorf("no active profile"))
+		return ExitRejected
+	}
+	if err := core.Restart(ctx, target.Content, target.Name); err != nil {
+		WriteError(stderr, "restart", err)
+		return ExitRejected
+	}
+	return operationResult("restart", jsonOutput, stdout)
+}
+
+func activeOr(store *profile.Store, profileID string) (profile.Profile, bool) {
+	if profileID != "" {
+		return store.Get(profileID)
+	}
+	return store.Active()
+}
+
+func operationResult(action string, jsonOutput bool, stdout io.Writer) int {
 	if jsonOutput {
-		if err := json.NewEncoder(stdout).Encode(struct {
+		_ = json.NewEncoder(stdout).Encode(struct {
 			SchemaVersion uint32 `json:"schema_version"`
-			Operation     string `json:"operation"`
-			ProfileID     string `json:"profile_id,omitempty"`
-			Mode          string `json:"mode,omitempty"`
-		}{SchemaVersion: 1, Operation: action, ProfileID: profileID, Mode: string(mode)}); err != nil {
-			fmt.Fprintf(stderr, "%s: %v\n", action, err)
-			return ExitRejected
-		}
+			Action        string `json:"action"`
+		}{SchemaVersion: 1, Action: action})
 		return ExitOK
 	}
 	fmt.Fprintf(stdout, "%s requested\n", action)

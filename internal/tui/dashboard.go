@@ -1,78 +1,59 @@
-// Package tui holds interactive terminal screens.
+// Package tui holds the interactive terminal screens.
 package tui
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/1suo/hiddify-tui/internal/client"
-	"github.com/1suo/hiddify-tui/internal/control"
+	"github.com/1suo/hiddify-tui/internal/profile"
 )
 
-// Dashboard is the first interactive screen. Quitting it never disconnects the
-// daemon; connection actions are explicit local-control requests.
-type Dashboard struct {
-	snapshot          control.Snapshot
-	err               error
-	width             int
-	height            int
-	updates           <-chan dashboardUpdate
-	page              page
-	profiles          []control.Profile
-	groups            []control.OutboundGroup
-	logs              []control.LogEntry
-	settings          control.Settings
-	service           control.ServiceInfo
-	diagnostics       control.Diagnostics
-	connection        control.ConnectionOperator
-	profilesAPI       control.ProfileWriter
-	localProfilesAPI  control.LocalProfileWriter
-	profilesReader    control.ProfileReader
-	outboundsAPI      control.OutboundOperator
-	logsAPI           control.LogReader
-	ctx               context.Context
-	action            string
-	cursor            int
-	confirmDisconnect bool
-	confirmLogClear   bool
-
-	adding    bool
-	addStep   int
-	addSource string
-	addName   string
-	input     string
-}
-
-type page string
+type pane int
 
 const (
-	pageDashboard page = "dashboard"
-	pageProfiles  page = "profiles"
-	pageOutbounds page = "outbounds"
-	pageLogs      page = "logs"
-	pageSettings  page = "settings"
-	pageService   page = "service"
+	paneProfiles pane = iota
+	paneOutbounds
+	paneLogs
 )
 
-type dashboardUpdate struct {
-	snapshot    control.Snapshot
-	err         error
-	profiles    []control.Profile
-	groups      []control.OutboundGroup
-	logs        []control.LogEntry
-	settings    control.Settings
-	service     control.ServiceInfo
-	diagnostics control.Diagnostics
+// Dashboard is the terminal screen. It is a client of the running core and the
+// client-side profile store; quitting it never disconnects the core.
+type Dashboard struct {
+	core  client.Client
+	store *profile.Store
+	err   error
+	ctx   context.Context
+
+	snapshot client.Snapshot
+	groups   []client.OutboundGroup
+	logs     []client.LogEntry
+	profiles []profile.Profile
+
+	pane           pane
+	profileCursor  int
+	outboundCursor int
+
+	width             int
+	height            int
+	confirmDisconnect bool
+	action            string
+	adding            bool
+	input             string
+}
+
+type update struct {
+	snapshot *client.Snapshot
+	groups   []client.OutboundGroup
+	logs     []client.LogEntry
+	err      error
 }
 
 type actionResult struct {
@@ -80,634 +61,483 @@ type actionResult struct {
 	err    error
 }
 
-type profilesLoaded struct {
-	profiles []control.Profile
-	err      error
+const maxLogLines = 500
+
+func NewDashboard(core client.Client, store *profile.Store, err error) Dashboard {
+	return Dashboard{core: core, store: store, err: err, profiles: store.List()}
 }
 
-type groupsLoaded struct {
-	groups []control.OutboundGroup
-	err    error
-}
-
-func NewDashboard(snapshot control.Snapshot, err error) Dashboard {
-	return Dashboard{snapshot: snapshot, err: err}
-}
-
-func (m Dashboard) Init() tea.Cmd { return waitForDashboardUpdate(m.updates) }
+func (m Dashboard) Init() tea.Cmd { return waitForUpdate(m.ctx, m.core) }
 
 func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		if m.adding {
-			return m.addKey(msg)
-		}
-		if msg.String() != "x" {
-			m.confirmDisconnect = false
-		}
-		if msg.String() != "C" {
-			m.confirmLogClear = false
+			return m.inputKey(msg)
 		}
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
-		case "1", "d":
-			m.page = pageDashboard
-		case "2", "p":
-			m.page = pageProfiles
-			m.cursor = 0
-		case "3", "o":
-			m.page = pageOutbounds
-			m.cursor = 0
-		case "4", "l":
-			m.page = pageLogs
-		case "5", "s":
-			m.page = pageSettings
-		case "6":
-			m.page = pageService
-		case "a":
-			if m.page == pageProfiles {
-				m.adding = true
-				m.addStep = 0
-				m.addSource = ""
-				m.addName = ""
-				m.input = ""
-			}
-		case "c":
-			return m, m.connectionAction("connect")
-		case "x":
-			if !m.confirmDisconnect {
-				m.confirmDisconnect = true
-				m.action = "Press x again to disconnect"
-				return m, nil
-			}
-			m.confirmDisconnect = false
-			return m, m.connectionAction("disconnect")
-		case "r":
-			return m, m.connectionAction("restart")
+		case "tab":
+			m.pane = (m.pane + 1) % 3
+		case "1":
+			m.pane = paneProfiles
+		case "2":
+			m.pane = paneOutbounds
+		case "3":
+			m.pane = paneLogs
 		case "up", "k":
 			m.moveCursor(-1)
 		case "down", "j":
 			m.moveCursor(1)
 		case "enter":
-			return m, m.selectionAction(false)
+			return m, m.activate()
 		case "t":
-			return m, m.selectionAction(true)
-		case "C":
-			if m.page != pageLogs {
+			return m, m.testOutbound()
+		case "a":
+			if m.pane == paneProfiles {
+				m.adding = true
+				m.input = ""
+			}
+		case "d":
+			if m.pane == paneProfiles {
+				return m, m.deleteProfile()
+			}
+		case "c":
+			return m, m.connect()
+		case "x":
+			if !m.confirmDisconnect {
+				m.confirmDisconnect = true
+				m.action = "press x again to disconnect"
 				return m, nil
 			}
-			if !m.confirmLogClear {
-				m.confirmLogClear = true
-				m.action = "Press C again to clear the daemon log buffer"
-				return m, nil
-			}
-			m.confirmLogClear = false
-			return m, m.clearLogsAction()
+			m.confirmDisconnect = false
+			return m, m.disconnect()
+		case "r":
+			return m, m.restart()
 		}
+		m.confirmDisconnect = false
 	case tea.PasteMsg:
-		if m.adding && m.addStep > 0 {
+		if m.adding {
 			m.input += msg.Content
 		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-	case dashboardUpdate:
-		m.snapshot, m.err, m.profiles, m.groups, m.logs, m.settings, m.service, m.diagnostics = msg.snapshot, msg.err, msg.profiles, msg.groups, msg.logs, msg.settings, msg.service, msg.diagnostics
-		return m, waitForDashboardUpdate(m.updates)
-	case profilesLoaded:
-		if msg.err != nil {
-			m.action = fmt.Sprintf("list profiles: %v", msg.err)
-		} else {
-			m.profiles = msg.profiles
+	case update:
+		if msg.err != nil && m.err == nil {
+			m.err = msg.err
 		}
-	case groupsLoaded:
-		if msg.err != nil {
-			m.action = fmt.Sprintf("list outbounds: %v", msg.err)
-		} else {
+		if msg.snapshot != nil {
+			m.snapshot = *msg.snapshot
+		}
+		if msg.groups != nil {
 			m.groups = msg.groups
 		}
+		if msg.logs != nil {
+			m.logs = append(m.logs, msg.logs...)
+			if len(m.logs) > maxLogLines {
+				m.logs = m.logs[len(m.logs)-maxLogLines:]
+			}
+		}
+		return m, waitForUpdate(m.ctx, m.core)
 	case actionResult:
 		if msg.err != nil {
-			m.action = fmt.Sprintf("%s failed: %v", msg.action, msg.err)
-			return m, nil
-		}
-		m.action = msg.action + " requested"
-		if strings.Contains(msg.action, "profile") || strings.Contains(msg.action, "outbound") {
-			return m, tea.Batch(m.loadProfilesCmd(), m.loadGroupsCmd())
+			m.action = msg.action + ": " + msg.err.Error()
+		} else {
+			m.action = msg.action + " requested"
 		}
 	}
 	return m, nil
 }
 
-func (m Dashboard) View() tea.View {
-	var content string
-	switch m.page {
-	case pageProfiles:
-		content = m.profilesView()
-	case pageOutbounds:
-		content = m.outboundsView()
-	case pageLogs:
-		content = m.logsView()
-	case pageSettings:
-		content = m.settingsView()
-	case pageService:
-		content = m.serviceView()
-	default:
-		content = m.dashboardView()
-	}
-	if m.err != nil {
-		content += fmt.Sprintf("\n\nDaemon unavailable\n%s", m.err)
-	}
-	if m.action != "" {
-		content += "\n\n" + m.action
-	}
-	content += "\n\n" + m.footer()
-
-	view := tea.NewView(content)
-	view.AltScreen = true
-	return view
-}
-
-func (m Dashboard) footer() string {
-	if m.width > 0 && m.width <= 80 {
-		return "1 Dash  2 Prof  3 Out  4 Logs  5 Set  6 Svc\nc connect  x x disconnect  r restart  Enter select  t test  a add  C C clear\nq/Ctrl+C quit; connection stays active"
-	}
-	return "1 Dashboard  2 Profiles  3 Outbounds  4 Logs  5 Settings  6 Service\nc connect  x disconnect  r restart  ↑/↓ select  Enter activate/select  t test outbound  a add profile  C clear logs\nq / Ctrl+C quit (connection stays active)"
-}
-
-func (m Dashboard) dashboardView() string {
-	state := m.snapshot.ConnectionState
-	if state == "" {
-		state = control.ConnectionStopped
-	}
-	profile := valueOr(m.snapshot.ActiveProfileName, "none")
-	requestedMode := valueOr(m.snapshot.RequestedMode, "none")
-	effectiveMode := valueOr(m.snapshot.EffectiveMode, "none")
-	outbound := valueOr(m.snapshot.SelectedOutbound, "none")
-	daemonVersion := valueOr(m.snapshot.DaemonVersion, "unknown")
-	coreVersion := valueOr(m.snapshot.CoreVersion, "unknown")
-
-	content := fmt.Sprintf("Hiddify\n\nConnection  %s\nProfile     %s\nRequested   %s\nEffective   %s\nOutbound    %s\n\nDown        %s/s\nUp          %s/s\nTotal       %s down / %s up\nConnections %d\nMemory      %s\nAgent       %s\nDaemon      %s (API %d.%d)\nCore        %s", state, profile, requestedMode, effectiveMode, outbound, formatBytes(m.snapshot.Traffic.DownlinkBytesPerSecond), formatBytes(m.snapshot.Traffic.UplinkBytesPerSecond), formatBytes(m.snapshot.Traffic.TotalDownloadBytes), formatBytes(m.snapshot.Traffic.TotalUploadBytes), m.snapshot.System.ConnectionCount, formatBytes(m.snapshot.System.MemoryBytes), agentStatus(m.snapshot.Agent), daemonVersion, m.snapshot.APIMajor, m.snapshot.APIMinor, coreVersion)
-	if m.snapshot.LastError != "" {
-		content += "\n\nLast warning\n" + m.snapshot.LastError
-	}
-	return content
-}
-
-func (m Dashboard) profilesView() string {
-	content := "Profiles\n"
-	if m.adding {
-		content += "\n" + m.addView()
-	}
-	if len(m.profiles) == 0 {
-		return content + "\nNo profiles available.\nUse hiddify-tui profile add, or press a to add one here."
-	}
-	for index, profile := range m.profiles {
-		active := " "
-		if profile.Active {
-			active = "*"
-		}
-		cursor := " "
-		if index == m.cursor {
-			cursor = ">"
-		}
-		content += fmt.Sprintf("\n%s%s %s  [%s]  %s", cursor, active, profile.Name, profile.Kind, valueOr(profile.RedactedURL, "local"))
-	}
-	return content
-}
-
-func (m Dashboard) addView() string {
-	if m.addStep == 0 {
-		return "Add profile\n[p] paste config content\n[f] from file path\n[u] remote subscription URL\n[esc] cancel"
-	}
-	sourceLabel := map[string]string{"paste": "Paste config content", "file": "File path", "url": "Subscription URL"}[m.addSource]
-	if m.addStep == 1 {
-		return fmt.Sprintf("Add profile (%s)\nName (Enter to confirm, empty for automatic): %s_", m.addSource, m.input)
-	}
-	return fmt.Sprintf("Add profile (%s)\n%s (Enter to confirm): %s_", m.addSource, sourceLabel, m.input)
-}
-
-func (m Dashboard) outboundsView() string {
-	content := "Outbounds\n"
-	if len(m.groups) == 0 {
-		return content + "\nNo outbounds available."
-	}
-	index := 0
-	for _, group := range m.groups {
-		content += "\n\n" + group.Name
-		for _, outbound := range group.Outbounds {
-			selected := " "
-			if outbound.ID == group.SelectedOutboundID {
-				selected = "*"
-			}
-			delay := "-"
-			if outbound.DelayMillis > 0 {
-				delay = fmt.Sprintf("%d ms", outbound.DelayMillis)
-			}
-			cursor := " "
-			if index == m.cursor {
-				cursor = ">"
-			}
-			content += fmt.Sprintf("\n%s%s %s  %s  %s", cursor, selected, outbound.Tag, outbound.Protocol, delay)
-			index++
-		}
-	}
-	return content
-}
-
-func (m Dashboard) logsView() string {
-	if len(m.logs) == 0 {
-		return "Logs\n\nNo daemon log entries in the bounded buffer.\nDaemon-side redaction is always preserved."
-	}
-	content := "Logs\n"
-	for _, entry := range m.logs {
-		timestamp := time.Unix(0, entry.TimestampUnix).Format("15:04:05")
-		content += fmt.Sprintf("\n%s %-5s %-12s %s", timestamp, entry.Level, entry.Component, entry.Message)
-	}
-	return content
-}
-
-func (m Dashboard) settingsView() string {
-	if len(m.settings.RedactedJSON) == 0 {
-		return "Settings\n\nNo settings document received from the daemon."
-	}
-	var formatted bytes.Buffer
-	if err := json.Indent(&formatted, m.settings.RedactedJSON, "", "  "); err != nil {
-		return "Settings\n\nDaemon returned invalid redacted JSON."
-	}
-	return "Settings (redacted)\n\n" + formatted.String() + "\n\nUse hiddify-tui settings validate|set|import|export for explicit file-based changes."
-}
-
-func (m Dashboard) serviceView() string {
-	listeners := "none"
-	if len(m.diagnostics.ActiveListeners) > 0 {
-		listeners = strings.Join(m.diagnostics.ActiveListeners, ", ")
-	}
-	content := fmt.Sprintf("Service\n\nInstalled   %t\nEnabled     %t\nRunning     %t\nSocket      %s\nListeners   %s\nDaemon      %s\nCore        %s", m.service.Installed, m.service.Enabled, m.service.Running, valueOr(m.diagnostics.SocketPath, "unknown"), listeners, valueOr(m.diagnostics.DaemonVersion, "unknown"), valueOr(m.diagnostics.CoreVersion, "unknown"))
-	if m.service.LastError != "" {
-		content += "\n\nService error\n" + m.service.LastError
-	}
-	if m.diagnostics.LastServiceError != "" && m.diagnostics.LastServiceError != m.service.LastError {
-		content += "\n\nLast diagnostic\n" + m.diagnostics.LastServiceError
-	}
-	return content
-}
-
-// Run opens the alternate-screen dashboard. Ctrl+C is a normal detach.
-func Run(snapshot control.Snapshot, err error) error {
-	return RunWithOptions(snapshot, err, false)
-}
-
-func RunWithOptions(snapshot control.Snapshot, err error, noColor bool) error {
-	_, runErr := tea.NewProgram(NewDashboard(snapshot, err), programOptions(noColor)...).Run()
-	if errors.Is(runErr, tea.ErrInterrupted) {
-		return nil
-	}
-	return runErr
-}
-
-// RunLive receives an initial snapshot and then keeps it current from the
-// daemon event stream. A dropped stream is retried with bounded backoff; the
-// client-side state reducer handles sequence gaps by fetching a fresh snapshot.
-func RunLive(ctx context.Context, daemon control.Client, watcher control.Watcher) error {
-	return RunLiveWithOptions(ctx, daemon, watcher, false)
-}
-
-func RunLiveWithOptions(ctx context.Context, daemon control.Client, watcher control.Watcher, noColor bool) error {
-	watchCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	updates := make(chan dashboardUpdate, 1)
-	model := NewDashboard(control.Snapshot{}, nil)
-	model.updates = updates
-	model.ctx = ctx
-	model.connection, _ = daemon.(control.ConnectionOperator)
-	model.profilesAPI, _ = daemon.(control.ProfileWriter)
-	model.localProfilesAPI, _ = daemon.(control.LocalProfileWriter)
-	model.profilesReader, _ = daemon.(control.ProfileReader)
-	model.outboundsAPI, _ = daemon.(control.OutboundOperator)
-	model.logsAPI, _ = daemon.(control.LogReader)
-	go streamDashboard(watchCtx, daemon, watcher, updates)
-	_, runErr := tea.NewProgram(model, programOptions(noColor)...).Run()
-	if errors.Is(runErr, tea.ErrInterrupted) {
-		return nil
-	}
-	return runErr
-}
-
-func programOptions(noColor bool) []tea.ProgramOption {
-	if noColor {
-		return []tea.ProgramOption{tea.WithColorProfile(colorprofile.ASCII)}
-	}
-	return nil
-}
-
-func (m Dashboard) connectionAction(action string) tea.Cmd {
-	if m.connection == nil {
-		return func() tea.Msg {
-			return actionResult{action: action, err: errors.New("daemon does not support connection controls")}
-		}
-	}
-	return func() tea.Msg {
-		var err error
-		switch action {
-		case "connect":
-			err = m.connection.Connect(m.ctx, "", "")
-		case "disconnect":
-			err = m.connection.Disconnect(m.ctx)
-		case "restart":
-			err = m.connection.Restart(m.ctx)
-		}
-		return actionResult{action: action, err: err}
-	}
-}
-
-func (m Dashboard) clearLogsAction() tea.Cmd {
-	if m.logsAPI == nil {
-		return func() tea.Msg {
-			return actionResult{action: "clear logs", err: errors.New("daemon does not support log controls")}
-		}
-	}
-	return func() tea.Msg { return actionResult{action: "clear logs", err: m.logsAPI.ClearLogs(m.ctx)} }
-}
-
-func (m Dashboard) addKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "ctrl+c" {
-		return m, tea.Quit
-	}
-	if m.addStep == 0 {
-		switch msg.String() {
-		case "p", "f", "u":
-			m.addSource = map[string]string{"p": "paste", "f": "file", "u": "url"}[msg.String()]
-			m.addStep = 1
-			m.addName = ""
-			m.input = ""
-		case "esc":
-			m.adding = false
-		}
-		return m, nil
-	}
+func (m Dashboard) inputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
 	case "esc":
-		if m.addStep == 1 {
-			m.adding = false
-		} else {
-			m.addStep = 1
-		}
+		m.adding = false
 		m.input = ""
-		return m, nil
-	case "backspace":
-		m.input = removeLastRune(m.input)
-		return m, nil
 	case "enter":
-		return m.submitAdd()
+		m.adding = false
+		content := strings.TrimSpace(m.input)
+		m.input = ""
+		if content == "" {
+			return m, nil
+		}
+		return m, m.addProfile(content)
+	case "backspace":
+		runes := []rune(m.input)
+		if len(runes) > 0 {
+			m.input = string(runes[:len(runes)-1])
+		}
 	default:
 		if msg.Text != "" {
 			m.input += msg.Text
 		}
-		return m, nil
 	}
+	return m, nil
 }
 
-func (m Dashboard) submitAdd() (tea.Model, tea.Cmd) {
-	if m.addStep == 1 {
-		m.addName = strings.TrimSpace(m.input)
-		m.input = ""
-		m.addStep = 2
-		return m, nil
-	}
-	source, name, content := m.addSource, m.addName, m.input
-	m.adding = false
-	m.addStep = 0
-	m.addSource = ""
-	m.addName = ""
-	m.input = ""
-	return m, m.addProfileCmd(source, name, content)
-}
-
-func (m Dashboard) addProfileCmd(source, name, content string) tea.Cmd {
-	content = strings.TrimSpace(content)
-	name = strings.TrimSpace(name)
+func (m Dashboard) addProfile(content string) tea.Cmd {
 	return func() tea.Msg {
-		if m.ctx == nil {
-			return actionResult{action: "add profile", err: errors.New("hiddify daemon is unavailable; run 'make install' once, then it runs as a service")}
-		}
 		var err error
-		switch source {
-		case "paste":
-			if m.localProfilesAPI == nil {
-				return actionResult{action: "add profile", err: errors.New("daemon does not support local profile upload")}
+		if looksLikeURL(content) {
+			remote, fetchErr := profile.FetchRemote(m.ctx, content)
+			if fetchErr == nil {
+				remote.URL = content
+				m.store.Add(profile.Profile{Name: remote.Name, Kind: profile.KindRemote, URL: content, UpdateInterval: remote.UpdateInterval, Usage: remote.Usage, Content: remote.Content}, false)
+				err = m.store.Save()
+			} else {
+				err = fetchErr
 			}
-			_, err = m.localProfilesAPI.AddLocalProfile(m.ctx, name, false, strings.NewReader(content))
-		case "file":
-			if m.localProfilesAPI == nil {
-				return actionResult{action: "add profile", err: errors.New("daemon does not support local profile upload")}
+		} else {
+			if parseErr := m.core.Parse(m.ctx, content); parseErr == nil {
+				m.store.Add(profile.Profile{Name: "Local", Kind: profile.KindLocal, Content: content}, false)
+				err = m.store.Save()
+			} else {
+				err = parseErr
 			}
-			var file *os.File
-			file, err = os.Open(content)
-			if err == nil {
-				_, err = m.localProfilesAPI.AddLocalProfile(m.ctx, name, false, file)
-				file.Close()
-			}
-		case "url":
-			if m.profilesAPI == nil {
-				return actionResult{action: "add profile", err: errors.New("daemon does not support remote profiles")}
-			}
-			_, err = m.profilesAPI.AddRemoteProfile(m.ctx, content, name, false)
-		default:
-			return actionResult{action: "add profile", err: errors.New("no add source selected")}
 		}
+		m.profiles = m.store.List()
 		return actionResult{action: "add profile", err: err}
 	}
 }
 
-func (m Dashboard) loadProfilesCmd() tea.Cmd {
-	if m.profilesReader == nil {
+func (m Dashboard) activate() tea.Cmd {
+	if m.pane == paneProfiles {
+		if m.profileCursor >= len(m.profiles) {
+			return nil
+		}
+		id := m.profiles[m.profileCursor].ID
+		return func() tea.Msg {
+			err := m.store.SetActive(id)
+			m.profiles = m.store.List()
+			return actionResult{action: "activate profile", err: err}
+		}
+	}
+	if m.pane == paneOutbounds {
+		choices := m.outboundChoices()
+		if m.outboundCursor >= len(choices) {
+			return nil
+		}
+		choice := choices[m.outboundCursor]
+		return func() tea.Msg {
+			return actionResult{action: "select outbound", err: m.core.SelectOutbound(m.ctx, choice.group, choice.tag)}
+		}
+	}
+	return nil
+}
+
+func (m Dashboard) testOutbound() tea.Cmd {
+	if m.pane != paneOutbounds {
 		return nil
 	}
+	choices := m.outboundChoices()
+	if m.outboundCursor >= len(choices) {
+		return nil
+	}
+	tag := choices[m.outboundCursor].tag
 	return func() tea.Msg {
-		profiles, err := m.profilesReader.ListProfiles(m.ctx)
-		return profilesLoaded{profiles: profiles, err: err}
+		return actionResult{action: "test outbound", err: m.core.TestOutbound(m.ctx, tag)}
 	}
 }
 
-func (m Dashboard) loadGroupsCmd() tea.Cmd {
-	if m.outboundsAPI == nil {
+func (m Dashboard) deleteProfile() tea.Cmd {
+	if m.profileCursor >= len(m.profiles) {
 		return nil
 	}
+	id := m.profiles[m.profileCursor].ID
 	return func() tea.Msg {
-		groups, err := m.outboundsAPI.ListOutboundGroups(m.ctx)
-		return groupsLoaded{groups: groups, err: err}
+		err := m.store.Delete(id)
+		m.profiles = m.store.List()
+		if m.profileCursor >= len(m.profiles) {
+			m.profileCursor = len(m.profiles) - 1
+		}
+		if m.profileCursor < 0 {
+			m.profileCursor = 0
+		}
+		return actionResult{action: "delete profile", err: err}
 	}
 }
 
-func removeLastRune(value string) string {
-	runes := []rune(value)
-	if len(runes) == 0 {
-		return value
+func (m Dashboard) connect() tea.Cmd {
+	target, ok := m.store.Active()
+	if !ok {
+		return func() tea.Msg { return actionResult{action: "connect", err: errors.New("no active profile")} }
 	}
-	return string(runes[:len(runes)-1])
+	return func() tea.Msg {
+		return actionResult{action: "connect", err: m.core.Connect(m.ctx, target.Content, target.Name)}
+	}
+}
+
+func (m Dashboard) disconnect() tea.Cmd {
+	return func() tea.Msg { return actionResult{action: "disconnect", err: m.core.Disconnect(m.ctx)} }
+}
+
+func (m Dashboard) restart() tea.Cmd {
+	target, ok := m.store.Active()
+	if !ok {
+		return func() tea.Msg { return actionResult{action: "restart", err: errors.New("no active profile")} }
+	}
+	return func() tea.Msg {
+		return actionResult{action: "restart", err: m.core.Restart(m.ctx, target.Content, target.Name)}
+	}
 }
 
 func (m *Dashboard) moveCursor(delta int) {
 	limit := 0
-	if m.page == pageProfiles {
+	switch m.pane {
+	case paneProfiles:
 		limit = len(m.profiles)
-	}
-	if m.page == pageOutbounds {
+	case paneOutbounds:
 		limit = len(m.outboundChoices())
 	}
 	if limit == 0 {
-		m.cursor = 0
 		return
 	}
-	m.cursor = (m.cursor + delta + limit) % limit
+	switch m.pane {
+	case paneProfiles:
+		m.profileCursor = (m.profileCursor + delta + limit) % limit
+	case paneOutbounds:
+		m.outboundCursor = (m.outboundCursor + delta + limit) % limit
+	}
 }
 
 type outboundChoice struct {
-	groupID  string
-	outbound control.Outbound
+	group string
+	tag   string
 }
 
 func (m Dashboard) outboundChoices() []outboundChoice {
 	var choices []outboundChoice
 	for _, group := range m.groups {
-		for _, outbound := range group.Outbounds {
-			choices = append(choices, outboundChoice{group.ID, outbound})
+		for _, item := range group.Items {
+			choices = append(choices, outboundChoice{group: group.Tag, tag: item.Tag})
 		}
 	}
 	return choices
 }
 
-func (m Dashboard) selectionAction(test bool) tea.Cmd {
-	if m.page == pageProfiles {
-		if m.profilesAPI == nil || m.cursor >= len(m.profiles) {
-			return nil
-		}
-		profile := m.profiles[m.cursor]
-		return func() tea.Msg {
-			return actionResult{action: "activate profile", err: m.profilesAPI.SetActiveProfile(m.ctx, profile.ID)}
-		}
-	}
-	if m.page == pageOutbounds {
-		choices := m.outboundChoices()
-		if m.outboundsAPI == nil || m.cursor >= len(choices) {
-			return nil
-		}
-		choice := choices[m.cursor]
-		return func() tea.Msg {
-			if test {
-				return actionResult{action: "test outbound", err: m.outboundsAPI.TestOutbounds(m.ctx, control.TestScope{OutboundID: choice.outbound.ID})}
-			}
-			if !choice.outbound.Selectable {
-				return actionResult{action: "select outbound", err: errors.New("outbound is not selectable")}
-			}
-			return actionResult{action: "select outbound", err: m.outboundsAPI.SelectOutbound(m.ctx, choice.groupID, choice.outbound.ID)}
-		}
-	}
-	return nil
+func looksLikeURL(value string) bool {
+	return strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://")
 }
 
-func waitForDashboardUpdate(updates <-chan dashboardUpdate) tea.Cmd {
-	if updates == nil {
+// Run opens the alternate-screen dashboard.
+func Run(core client.Client, store *profile.Store, err error) error {
+	return RunWithOptions(core, store, err, false)
+}
+
+func RunWithOptions(core client.Client, store *profile.Store, err error, noColor bool) error {
+	model := NewDashboard(core, store, err)
+	model.ctx = context.Background()
+	options := []tea.ProgramOption{}
+	if noColor {
+		options = append(options, tea.WithColorProfile(colorprofile.ASCII))
+	}
+	_, runErr := tea.NewProgram(model, options...).Run()
+	if errors.Is(runErr, tea.ErrInterrupted) {
+		return nil
+	}
+	return runErr
+}
+
+func waitForUpdate(ctx context.Context, core client.Client) tea.Cmd {
+	if core == nil {
 		return nil
 	}
 	return func() tea.Msg {
-		update := <-updates
-		return update
-	}
-}
-
-func streamDashboard(ctx context.Context, daemon control.Client, watcher control.Watcher, updates chan<- dashboardUpdate) {
-	backoff := 200 * time.Millisecond
-	var state client.State
-	for {
-		loaded, err := client.NewState(ctx, daemon)
-		if err == nil {
-			state = loaded
-			update := dashboardUpdate{snapshot: state.Snapshot}
-			if reader, ok := daemon.(control.ProfileReader); ok {
-				update.profiles, _ = reader.ListProfiles(ctx)
+		statusCh, _ := core.WatchStatus(ctx)
+		logCh, _ := core.WatchLogs(ctx, client.LogInfo)
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case snapshot, ok := <-statusCh:
+				if !ok {
+					return update{err: errors.New("core status stream ended")}
+				}
+				return update{snapshot: &snapshot}
+			case entry, ok := <-logCh:
+				if ok {
+					return update{logs: []client.LogEntry{entry}}
+				}
+			case <-ticker.C:
+				groups, err := core.OutboundGroups(ctx)
+				if err == nil {
+					return update{groups: groups}
+				}
+			case <-ctx.Done():
+				return update{err: errors.New("core unavailable")}
 			}
-			if operator, ok := daemon.(control.OutboundOperator); ok {
-				update.groups, _ = operator.ListOutboundGroups(ctx)
+		}
+	}
+}
+
+var (
+	activeBorder = lipgloss.Color("6")
+	idleBorder   = lipgloss.Color("8")
+)
+
+func bordered(title string, width, height int, focused bool, content string) string {
+	color := idleBorder
+	if focused {
+		color = activeBorder
+	}
+	style := lipgloss.NewStyle().
+		Width(width).
+		Height(height).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(color).
+		Padding(0, 1)
+	body := strings.TrimRight(content, "\n")
+	lines := strings.Split(body, "\n")
+	if len(lines) > height-1 {
+		lines = lines[:height-1]
+	}
+	return style.Render(title + "\n" + strings.Join(lines, "\n"))
+}
+
+func (m Dashboard) View() tea.View {
+	view := tea.NewView(m.render())
+	view.AltScreen = true
+	return view
+}
+
+func (m Dashboard) render() string {
+	if m.core == nil {
+		content := "hiddify core unavailable\n" + m.err.Error()
+		if m.err == nil {
+			content = "hiddify core unavailable"
+		}
+		return content
+	}
+
+	width := m.width
+	height := m.height
+	if width < 40 {
+		width = 80
+	}
+	if height < 10 {
+		height = 24
+	}
+
+	status := m.statusBar(width)
+
+	logsHeight := height * 2 / 5
+	topHeight := height - logsHeight - 3
+	profilesWidth := width * 2 / 5
+	outboundsWidth := width - profilesWidth - 1
+
+	profilesPane := bordered("profiles", profilesWidth, topHeight, m.pane == paneProfiles, m.profilesView())
+	outboundsPane := bordered("outbounds", outboundsWidth, topHeight, m.pane == paneOutbounds, m.outboundsView())
+	logsPane := bordered("logs", width, logsHeight, m.pane == paneLogs, m.logsView())
+
+	top := lipgloss.JoinHorizontal(lipgloss.Top, profilesPane, outboundsPane)
+
+	footer := m.footer(width)
+	return status + "\n" + top + "\n" + logsPane + "\n" + footer
+}
+
+func (m Dashboard) statusBar(width int) string {
+	state := string(m.snapshot.State)
+	if state == "" {
+		state = "stopped"
+	}
+	profile := m.snapshot.CurrentProfile
+	if profile == "" {
+		profile = "none"
+	}
+	line := fmt.Sprintf("state %s  profile %s  ↓ %s  ↑ %s  outbound %s",
+		state, profile, formatBytes(m.snapshot.Downlink), formatBytes(m.snapshot.Uplink), valueOr(m.snapshot.CurrentOutbound, "none"))
+	if m.action != "" {
+		line += "  ·  " + m.action
+	}
+	style := lipgloss.NewStyle().Width(width).Padding(0, 1).Bold(true)
+	return style.Render(line)
+}
+
+func (m Dashboard) profilesView() string {
+	if len(m.profiles) == 0 {
+		return "no profiles\n\npress a to add (paste a URL or config)"
+	}
+	var builder strings.Builder
+	for index, profile := range m.profiles {
+		marker := "  "
+		if index == m.profileCursor && m.pane == paneProfiles {
+			marker = "> "
+		}
+		active := " "
+		if profile.Active {
+			active = "*"
+		}
+		line := fmt.Sprintf("%s%s %s", marker, active, profile.Name)
+		if index == m.profileCursor && m.pane == paneProfiles {
+			line = lipgloss.NewStyle().Reverse(true).Render(line)
+		}
+		builder.WriteString(line + "\n")
+	}
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Dashboard) outboundsView() string {
+	if len(m.groups) == 0 {
+		return "no outbounds"
+	}
+	var builder strings.Builder
+	index := 0
+	for _, group := range m.groups {
+		builder.WriteString(group.Tag + " [" + group.Type + "]\n")
+		for _, item := range group.Items {
+			marker := "  "
+			if index == m.outboundCursor && m.pane == paneOutbounds {
+				marker = "> "
 			}
-			if reader, ok := daemon.(control.LogReader); ok {
-				update.logs = loadLogTail(ctx, reader)
+			selected := " "
+			if item.Selected {
+				selected = "*"
 			}
-			if operator, ok := daemon.(control.SettingsOperator); ok {
-				update.settings, _ = operator.GetSettings(ctx)
+			delay := "-"
+			if item.DelayMillis > 0 {
+				delay = fmt.Sprintf("%dms", item.DelayMillis)
 			}
-			if reader, ok := daemon.(control.ServiceReader); ok {
-				update.service, _ = reader.GetServiceInfo(ctx)
-				update.diagnostics, _ = reader.GetDiagnostics(ctx)
+			line := fmt.Sprintf("%s%s %s  %s  %s", marker, selected, item.Tag, item.Type, delay)
+			if index == m.outboundCursor && m.pane == paneOutbounds {
+				line = lipgloss.NewStyle().Reverse(true).Render(line)
 			}
-			sendDashboardUpdate(ctx, updates, update)
-			err = state.Watch(ctx, daemon, watcher)
-		}
-		if ctx.Err() != nil {
-			return
-		}
-		if err == nil {
-			err = errors.New("daemon event stream ended")
-		}
-		sendDashboardUpdate(ctx, updates, dashboardUpdate{snapshot: state.Snapshot, err: err})
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(backoff):
-		}
-		if backoff < 2*time.Second {
-			backoff *= 2
+			builder.WriteString(line + "\n")
+			index++
 		}
 	}
+	return strings.TrimRight(builder.String(), "\n")
 }
 
-func loadLogTail(ctx context.Context, reader control.LogReader) []control.LogEntry {
-	entries, err := reader.TailLogs(ctx, 100, control.LogInfo, false)
-	if err != nil {
-		return nil
+func (m Dashboard) logsView() string {
+	if len(m.logs) == 0 {
+		return "no log entries"
 	}
-	var result []control.LogEntry
-	for entry := range entries {
-		result = append(result, entry)
-		if len(result) == 100 {
-			break
-		}
+	start := len(m.logs) - m.height/2
+	if start < 0 {
+		start = 0
 	}
-	return result
+	var builder strings.Builder
+	for _, entry := range m.logs[start:] {
+		builder.WriteString(fmt.Sprintf("%s %-5s %-10s %s\n", entry.Time.Format("15:04:05"), entry.Level, entry.Component, entry.Message))
+	}
+	return strings.TrimRight(builder.String(), "\n")
 }
 
-func sendDashboardUpdate(ctx context.Context, updates chan<- dashboardUpdate, update dashboardUpdate) {
-	select {
-	case updates <- update:
-	case <-ctx.Done():
+func (m Dashboard) footer(width int) string {
+	line := "c connect  x disconnect  r restart  tab pane  ↑/↓ move  enter select  a add  d delete  t test  q quit"
+	if m.adding {
+		line = "add profile: paste URL or config, enter to confirm, esc to cancel"
 	}
+	if m.width > 0 && len(line) > width {
+		line = "c/x/r conn  tab pane  ↑↓ move  enter select  a add  d del  t test  q quit"
+	}
+	return line
 }
 
-func valueOr(value, fallback string) string {
-	if value == "" {
-		return fallback
-	}
-	return value
-}
-
-func agentStatus(agent control.AgentHealth) string {
-	if !agent.Required {
-		return "not required"
-	}
-	if agent.Connected {
-		if agent.Applied {
-			return "connected; proxy applied"
-		}
-		return "connected; awaiting proxy application"
-	}
-	if agent.LastError != "" {
-		return "unavailable: " + agent.LastError
-	}
-	return "unavailable"
-}
-
-func formatBytes(value uint64) string {
+func formatBytes(value int64) string {
 	units := []string{"B", "KiB", "MiB", "GiB", "TiB"}
 	amount := float64(value)
 	unit := 0
@@ -716,7 +546,14 @@ func formatBytes(value uint64) string {
 		unit++
 	}
 	if unit == 0 {
-		return strconv.FormatUint(value, 10) + " " + units[unit]
+		return fmt.Sprintf("%d%s", value, units[unit])
 	}
-	return fmt.Sprintf("%.1f %s", amount, units[unit])
+	return fmt.Sprintf("%.1f%s", amount, units[unit])
+}
+
+func valueOr(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
 }

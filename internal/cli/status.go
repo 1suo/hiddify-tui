@@ -1,4 +1,3 @@
-// Package cli implements noninteractive command behavior.
 package cli
 
 import (
@@ -8,86 +7,81 @@ import (
 	"io"
 
 	"github.com/1suo/hiddify-tui/internal/client"
-	"github.com/1suo/hiddify-tui/internal/control"
 )
 
-const (
-	ExitOK          = 0
-	ExitUsage       = 2
-	ExitUnavailable = 3
-	ExitRejected    = 4
-	ExitPrivilege   = 5
-)
+type statusOutput struct {
+	State           string `json:"state"`
+	Message         string `json:"message,omitempty"`
+	Memory          int64  `json:"memory_bytes"`
+	Uplink          int64  `json:"uplink_bytes_per_second"`
+	Downlink        int64  `json:"downlink_bytes_per_second"`
+	UplinkTotal     int64  `json:"total_upload_bytes"`
+	DownlinkTotal   int64  `json:"total_download_bytes"`
+	Connections     int32  `json:"connection_count"`
+	CurrentOutbound string `json:"current_outbound,omitempty"`
+	CurrentProfile  string `json:"current_profile,omitempty"`
+}
 
-func Status(ctx context.Context, daemon control.Client, jsonOutput bool, stdout, stderr io.Writer) int {
-	snapshot, err := client.Snapshot(ctx, daemon)
+func statusFrom(s client.Snapshot) statusOutput {
+	return statusOutput{
+		State:           string(s.State),
+		Message:         s.Message,
+		Memory:          s.Memory,
+		Uplink:          s.Uplink,
+		Downlink:        s.Downlink,
+		UplinkTotal:     s.UplinkTotal,
+		DownlinkTotal:   s.DownlinkTotal,
+		Connections:     s.Connections,
+		CurrentOutbound: s.CurrentOutbound,
+		CurrentProfile:  s.CurrentProfile,
+	}
+}
+
+// Status prints a one-shot core status.
+func Status(ctx context.Context, core client.Client, jsonOutput bool, stdout, stderr io.Writer) int {
+	snapshot, err := core.Snapshot(ctx)
 	if err != nil {
-		fmt.Fprintf(stderr, "status: %v\n", err)
+		WriteError(stderr, "status", err)
 		return ExitUnavailable
 	}
 	if jsonOutput {
-		if err := json.NewEncoder(stdout).Encode(struct {
-			SchemaVersion uint32           `json:"schema_version"`
-			Snapshot      control.Snapshot `json:"snapshot"`
-		}{SchemaVersion: 1, Snapshot: snapshot}); err != nil {
-			fmt.Fprintf(stderr, "status: %v\n", err)
+		if err := writeJSON(stdout, statusFrom(snapshot)); err != nil {
 			return ExitRejected
 		}
 		return ExitOK
 	}
-	fmt.Fprintf(stdout, "Connection: %s\n", snapshot.ConnectionState)
-	fmt.Fprintf(stdout, "Profile: %s\n", valueOr(snapshot.ActiveProfileName, "none"))
-	fmt.Fprintf(stdout, "Mode: %s\n", valueOr(snapshot.EffectiveMode, "none"))
-	fmt.Fprintf(stdout, "Outbound: %s\n", valueOr(snapshot.SelectedOutbound, "none"))
+	fmt.Fprintf(stdout, "State:      %s\n", snapshot.State)
+	fmt.Fprintf(stdout, "Profile:    %s\n", valueOr(snapshot.CurrentProfile, "none"))
+	fmt.Fprintf(stdout, "Outbound:   %s\n", valueOr(snapshot.CurrentOutbound, "none"))
+	fmt.Fprintf(stdout, "Down:       %d B/s\n", snapshot.Downlink)
+	fmt.Fprintf(stdout, "Up:         %d B/s\n", snapshot.Uplink)
+	fmt.Fprintf(stdout, "Total:      %d B down / %d B up\n", snapshot.DownlinkTotal, snapshot.UplinkTotal)
+	fmt.Fprintf(stdout, "Connections %d\n", snapshot.Connections)
+	fmt.Fprintf(stdout, "Memory:     %d B\n", snapshot.Memory)
+	if snapshot.Message != "" {
+		fmt.Fprintf(stdout, "Message:    %s\n", snapshot.Message)
+	}
 	return ExitOK
 }
 
-// StatusWatch writes an initial state and each subsequent state. JSON output
-// is JSON Lines so scripts never need to parse terminal presentation text.
-func StatusWatch(ctx context.Context, daemon control.Client, watcher control.Watcher, jsonOutput bool, stdout, stderr io.Writer) int {
-	state, err := client.NewState(ctx, daemon)
+// StatusWatch streams status snapshots as JSON Lines (or human lines).
+func StatusWatch(ctx context.Context, core client.Client, jsonOutput bool, stdout, stderr io.Writer) int {
+	updates, err := core.WatchStatus(ctx)
 	if err != nil {
-		fmt.Fprintf(stderr, "status: %v\n", err)
+		WriteError(stderr, "status", err)
 		return ExitUnavailable
 	}
-	if err := writeSnapshot(state.Snapshot, jsonOutput, stdout); err != nil {
-		fmt.Fprintf(stderr, "status: %v\n", err)
-		return ExitRejected
-	}
-	events, err := watcher.WatchEvents(ctx, state.LastSequence)
-	if err != nil {
-		fmt.Fprintf(stderr, "status: %v\n", err)
-		return ExitUnavailable
-	}
-	for {
-		select {
-		case <-ctx.Done():
-			return ExitOK
-		case event, ok := <-events:
-			if !ok {
-				return ExitOK
-			}
-			if err := state.Apply(ctx, daemon, event); err != nil {
-				fmt.Fprintf(stderr, "status: %v\n", err)
-				return ExitUnavailable
-			}
-			if err := writeSnapshot(state.Snapshot, jsonOutput, stdout); err != nil {
-				fmt.Fprintf(stderr, "status: %v\n", err)
+	for snapshot := range updates {
+		if jsonOutput {
+			if err := json.NewEncoder(stdout).Encode(statusFrom(snapshot)); err != nil {
 				return ExitRejected
 			}
+			continue
 		}
+		fmt.Fprintf(stdout, "state=%s profile=%s down=%d up=%d outbound=%s\n",
+			snapshot.State, valueOr(snapshot.CurrentProfile, "none"), snapshot.Downlink, snapshot.Uplink, valueOr(snapshot.CurrentOutbound, "none"))
 	}
-}
-
-func writeSnapshot(snapshot control.Snapshot, jsonOutput bool, stdout io.Writer) error {
-	if jsonOutput {
-		return json.NewEncoder(stdout).Encode(struct {
-			SchemaVersion uint32           `json:"schema_version"`
-			Snapshot      control.Snapshot `json:"snapshot"`
-		}{SchemaVersion: 1, Snapshot: snapshot})
-	}
-	_, err := fmt.Fprintf(stdout, "Connection: %s\nProfile: %s\nMode: %s\nOutbound: %s\n\n", snapshot.ConnectionState, valueOr(snapshot.ActiveProfileName, "none"), valueOr(snapshot.EffectiveMode, "none"), valueOr(snapshot.SelectedOutbound, "none"))
-	return err
+	return ExitOK
 }
 
 func valueOr(value, fallback string) string {

@@ -1,5 +1,5 @@
 [Unit]
-Description=Hiddify Core local control daemon
+Description=Hiddify Core headless service
 Documentation=https://github.com/1suo/hiddify-tui
 Wants=network-online.target
 After=network-online.target
@@ -7,18 +7,12 @@ ConditionPathIsExecutable=/usr/lib/hiddify/hiddify-core
 
 [Service]
 Type=simple
-EnvironmentFile=/etc/hiddify/core.env
-ExecStart=/usr/lib/hiddify/hiddify-core daemon run --state-dir=/var/lib/hiddify --socket=/run/hiddify/control.sock --allowed-uid=${HIDDIFY_ALLOWED_UID}
+ExecStart=/usr/lib/hiddify/hiddify-core run -c /etc/hiddify/active-config.json
 Restart=on-failure
 RestartSec=2s
 TimeoutStopSec=20s
 UMask=0077
-StateDirectory=hiddify
-StateDirectoryMode=0700
-RuntimeDirectory=hiddify
-RuntimeDirectoryMode=0750
 PrivateTmp=true
-ProtectHome=true
 ProtectSystem=full
 LockPersonality=true
 RestrictSUIDSGID=true

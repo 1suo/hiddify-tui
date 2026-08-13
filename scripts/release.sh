@@ -6,7 +6,6 @@
 #
 # Outputs into dist/:
 #   hiddify-tui-<os>-<arch>[.exe]
-#   hiddify-agent-<os>-<arch>[.exe]
 #   hiddify-migrate-linux-amd64
 #   checksums.txt          (SHA-256 for every artifact)
 #   sbom/                  (go version -m module manifests per artifact)
@@ -32,7 +31,6 @@ for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; d
     goos="${target%/*}"
     goarch="${target#*/}"
     build hiddify-tui ./cmd/hiddify-tui "$goos" "$goarch"
-    build hiddify-agent ./cmd/hiddify-agent "$goos" "$goarch"
 done
 
 build hiddify-migrate ./cmd/hiddify-migrate linux amd64

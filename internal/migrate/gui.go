@@ -2,7 +2,6 @@
 package migrate
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -10,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/1suo/hiddify-tui/internal/control"
+	"github.com/1suo/hiddify-tui/internal/profile"
 	_ "modernc.org/sqlite"
 )
 
@@ -42,11 +41,6 @@ type ImportedProfile struct {
 type Result struct {
 	Imported []ImportedProfile `json:"imported"`
 	Warnings []Warning         `json:"warnings,omitempty"`
-}
-
-type Target interface {
-	control.ProfileWriter
-	control.LocalProfileWriter
 }
 
 // ReadPlan opens the GUI database read-only. Local content is read from the
@@ -100,41 +94,50 @@ func ReadPlan(databasePath, configsDir string) (Plan, error) {
 	return plan, rows.Err()
 }
 
-// Apply imports a previously-read plan into the daemon. It never accesses the
-// GUI database or config directory, which lets callers separate review from a
-// deliberate write operation.
-func Apply(ctx context.Context, plan Plan, target Target) Result {
+// Apply imports a previously-read plan into the client-side profile store. It
+// never accesses the GUI database or config directory, which lets callers
+// separate review from a deliberate write operation.
+func Apply(ctx context.Context, plan Plan, store *profile.Store) Result {
 	result := Result{Warnings: append([]Warning(nil), plan.Warnings...)}
 	activeID := ""
-	for _, profile := range plan.Profiles {
-		var (
-			imported control.Profile
-			err      error
-		)
-		switch profile.Kind {
+	for _, source := range plan.Profiles {
+		var added profile.Profile
+		switch source.Kind {
 		case "remote":
-			imported, err = target.AddRemoteProfile(ctx, profile.URL, profile.Name, false)
+			remote, err := profile.FetchRemote(ctx, source.URL)
+			if err != nil {
+				result.Warnings = append(result.Warnings, Warning{source.SourceID, "import failed: " + err.Error()})
+				continue
+			}
+			if source.Name != "" {
+				remote.Name = source.Name
+			}
+			added = store.Add(profile.Profile{
+				Name: remote.Name, Kind: profile.KindRemote, URL: source.URL,
+				UpdateInterval: remote.UpdateInterval, Usage: remote.Usage, Content: remote.Content,
+			}, false)
 		case "local":
-			imported, err = target.AddLocalProfile(ctx, profile.Name, false, bytesReader(profile.Content))
-		}
-		if err != nil {
-			result.Warnings = append(result.Warnings, Warning{profile.SourceID, "import failed: " + err.Error()})
+			added = store.Add(profile.Profile{Name: source.Name, Kind: profile.KindLocal, Content: string(source.Content)}, false)
+		default:
+			result.Warnings = append(result.Warnings, Warning{source.SourceID, "unknown profile type " + source.Kind})
 			continue
 		}
-		result.Imported = append(result.Imported, ImportedProfile{profile.SourceID, imported.ID})
-		if profile.Active {
-			activeID = imported.ID
+		result.Imported = append(result.Imported, ImportedProfile{source.SourceID, added.ID})
+		if source.Active {
+			activeID = added.ID
 		}
 	}
+	if err := store.Save(); err != nil {
+		result.Warnings = append(result.Warnings, Warning{Message: "save profile store: " + err.Error()})
+		return result
+	}
 	if activeID != "" {
-		if err := target.SetActiveProfile(ctx, activeID); err != nil {
+		if err := store.SetActive(activeID); err != nil {
 			result.Warnings = append(result.Warnings, Warning{Message: "set active profile failed: " + err.Error()})
 		}
 	}
 	return result
 }
-
-func bytesReader(content []byte) *bytes.Reader { return bytes.NewReader(content) }
 
 func redactURL(value string) string {
 	parsed, err := url.Parse(value)

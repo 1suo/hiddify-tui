@@ -7,7 +7,6 @@ all: build
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags='-s -w' -o $(DIST)/hiddify-tui ./cmd/hiddify-tui
-	CGO_ENABLED=0 $(GO) build -trimpath -ldflags='-s -w' -o $(DIST)/hiddify-agent ./cmd/hiddify-agent
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags='-s -w' -o $(DIST)/hiddify-migrate ./cmd/hiddify-migrate
 
 test:

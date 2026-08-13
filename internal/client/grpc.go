@@ -3,541 +3,299 @@ package client
 import (
 	"context"
 	"fmt"
-	"io"
-	"net"
-	"os"
-	"path/filepath"
-	"runtime"
+	"time"
 
-	controlv1 "github.com/1suo/hiddify-tui/gen/control/v1"
-	"github.com/1suo/hiddify-tui/internal/control"
+	"github.com/1suo/hiddify-tui/gen/hcommon"
+	"github.com/1suo/hiddify-tui/gen/hcore"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// GRPCClient is the local-IPC implementation of the thin client boundary.
-// Unix-domain socket permissions authenticate the caller; TLS is deliberately
-// not layered over this host-local transport.
+// DefaultAddress is where the core serves its insecure Core gRPC service when
+// run headless (HiddifyCli run) or by the GUI.
+const DefaultAddress = "127.0.0.1:17078"
+
+// GRPCClient is the gRPC implementation of Client over the core's Core service.
 type GRPCClient struct {
-	connection *grpc.ClientConn
-	api        controlv1.ControlServiceClient
+	conn *grpc.ClientConn
+	api  hcore.CoreClient
 }
 
-// MaxLocalProfileBytes mirrors the daemon's bounded profile upload limit.
-const MaxLocalProfileBytes int64 = 8 << 20
-
-func DefaultSocket() string {
-	if runtime.GOOS == "darwin" {
-		return "/var/run/hiddify/control.sock"
-	}
-	system := "/run/hiddify/control.sock"
-	if _, err := os.Stat(system); err == nil {
-		return system
-	}
-	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
-		return filepath.Join(xdg, "hiddify", "control.sock")
-	}
-	return system
-}
-
-func DialUnix(ctx context.Context, socket string) (*GRPCClient, error) {
-	connection, err := grpc.DialContext(ctx, "passthrough:///hiddify-control",
+// Dial connects to the core's Core gRPC service. The transport is plain TCP
+// with no TLS, matching the core's SetupMode_GRPC_*_INSECURE modes.
+func Dial(ctx context.Context, address string) (*GRPCClient, error) {
+	conn, err := grpc.DialContext(ctx, address,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "unix", socket)
-		}),
 		grpc.WithBlock(),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return nil, fmt.Errorf("connect to core at %s: %w", address, err)
 	}
-	return &GRPCClient{connection: connection, api: controlv1.NewControlServiceClient(connection)}, nil
+	return &GRPCClient{conn: conn, api: hcore.NewCoreClient(conn)}, nil
 }
 
-func (c *GRPCClient) Close() error {
-	return c.connection.Close()
-}
+func (c *GRPCClient) Close() error { return c.conn.Close() }
 
-func (c *GRPCClient) GetSnapshot(ctx context.Context) (control.Snapshot, error) {
-	response, err := c.api.GetSnapshot(ctx, &controlv1.GetSnapshotRequest{})
+func (c *GRPCClient) Connect(ctx context.Context, content, name string) error {
+	response, err := c.api.Start(ctx, &hcore.StartRequest{ConfigContent: content, ConfigName: name})
 	if err != nil {
-		return control.Snapshot{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return err
 	}
-	return snapshotFromProto(response), nil
-}
-
-func (c *GRPCClient) Connect(ctx context.Context, profileID string, mode control.ConnectionMode) error {
-	response, err := c.api.Connect(ctx, &controlv1.ConnectRequest{ProfileId: profileID, Mode: connectionModeToProto(mode)})
-	if err != nil {
-		return fmt.Errorf("connect: %w", err)
-	}
-	return operationError("connect", response)
+	return operationError(response)
 }
 
 func (c *GRPCClient) Disconnect(ctx context.Context) error {
-	response, err := c.api.Disconnect(ctx, &controlv1.DisconnectRequest{})
+	response, err := c.api.Stop(ctx, &hcommon.Empty{})
 	if err != nil {
-		return fmt.Errorf("disconnect: %w", err)
+		return err
 	}
-	return operationError("disconnect", response)
+	return operationError(response)
 }
 
-func (c *GRPCClient) Restart(ctx context.Context) error {
-	response, err := c.api.Restart(ctx, &controlv1.RestartRequest{})
+func (c *GRPCClient) Restart(ctx context.Context, content, name string) error {
+	response, err := c.api.Restart(ctx, &hcore.StartRequest{ConfigContent: content, ConfigName: name})
 	if err != nil {
-		return fmt.Errorf("restart: %w", err)
+		return err
 	}
-	return operationError("restart", response)
+	return operationError(response)
 }
 
-func (c *GRPCClient) WatchEvents(ctx context.Context, afterSequence uint64) (<-chan control.Event, error) {
-	stream, err := c.api.WatchEvents(ctx, &controlv1.WatchRequest{AfterSequence: afterSequence})
+func (c *GRPCClient) Snapshot(ctx context.Context) (Snapshot, error) {
+	info, err := c.api.GetSystemInfo(ctx, &hcommon.Empty{})
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return Snapshot{}, err
 	}
-	events := make(chan control.Event)
+	state, message := StateStopped, ""
+	if stream, err := c.api.CoreInfoListener(ctx, &hcommon.Empty{}); err == nil {
+		if first, err := stream.Recv(); err == nil {
+			state, message = stateFromCore(first)
+		}
+	}
+	return snapshotFromParts(state, message, info), nil
+}
+
+// WatchStatus merges the core's state and system-info streams into one snapshot
+// channel. The caller cancels via ctx.
+func (c *GRPCClient) WatchStatus(ctx context.Context) (<-chan Snapshot, error) {
+	stateStream, err := c.api.CoreInfoListener(ctx, &hcommon.Empty{})
+	if err != nil {
+		return nil, err
+	}
+	infoStream, err := c.api.GetSystemInfoStream(ctx, &hcommon.Empty{})
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(chan Snapshot, 1)
+	state := StateStopped
+	message := ""
+	var info *hcore.SystemInfo
+
+	emit := func() {
+		snapshot := Snapshot{State: state, Message: message}
+		if info != nil {
+			snapshot.Memory = info.GetMemory()
+			snapshot.Uplink = info.GetUplink()
+			snapshot.Downlink = info.GetDownlink()
+			snapshot.UplinkTotal = info.GetUplinkTotal()
+			snapshot.DownlinkTotal = info.GetDownlinkTotal()
+			snapshot.Connections = info.GetConnectionsIn() + info.GetConnectionsOut()
+			snapshot.CurrentOutbound = info.GetCurrentOutbound()
+			snapshot.CurrentProfile = info.GetCurrentProfile()
+		}
+		select {
+		case out <- snapshot:
+		default:
+		}
+	}
+
 	go func() {
-		defer close(events)
+		defer close(out)
 		for {
-			event, err := stream.Recv()
+			entry, err := stateStream.Recv()
 			if err != nil {
 				return
 			}
-			converted := eventFromProto(event)
-			select {
-			case events <- converted:
-			case <-ctx.Done():
-				return
-			}
+			state, message = stateFromCore(entry)
+			emit()
 		}
 	}()
-	return events, nil
-}
-
-func (c *GRPCClient) ListProfiles(ctx context.Context) ([]control.Profile, error) {
-	response, err := c.api.ListProfiles(ctx, &controlv1.ListProfilesRequest{})
-	if err != nil {
-		return nil, fmt.Errorf("list profiles: %w", err)
-	}
-	profiles := make([]control.Profile, 0, len(response.GetProfiles()))
-	for _, profile := range response.GetProfiles() {
-		profiles = append(profiles, profileFromProto(profile))
-	}
-	return profiles, nil
-}
-
-func (c *GRPCClient) GetProfile(ctx context.Context, id string) (control.Profile, error) {
-	response, err := c.api.GetProfile(ctx, &controlv1.GetProfileRequest{ProfileId: id})
-	if err != nil {
-		return control.Profile{}, fmt.Errorf("get profile: %w", err)
-	}
-	return profileFromProto(response), nil
-}
-
-func (c *GRPCClient) AddRemoteProfile(ctx context.Context, url, name string, active bool) (control.Profile, error) {
-	response, err := c.api.AddRemoteProfile(ctx, &controlv1.AddRemoteProfileRequest{Url: url, Name: name, SetActive: active})
-	if err != nil {
-		return control.Profile{}, fmt.Errorf("add remote profile: %w", err)
-	}
-	return profileFromProto(response), nil
-}
-
-func (c *GRPCClient) AddLocalProfile(ctx context.Context, name string, active bool, content io.Reader) (control.Profile, error) {
-	stream, err := c.api.AddLocalProfile(ctx)
-	if err != nil {
-		return control.Profile{}, fmt.Errorf("add local profile: %w", err)
-	}
-	if err := stream.Send(&controlv1.AddLocalProfileRequest{Part: &controlv1.AddLocalProfileRequest_Metadata{Metadata: &controlv1.LocalProfileMetadata{Name: name, SetActive: active}}}); err != nil {
-		return control.Profile{}, fmt.Errorf("send local profile metadata: %w", err)
-	}
-	buffer := make([]byte, 32*1024)
-	var total int64
-	for {
-		count, readErr := content.Read(buffer)
-		if count > 0 {
-			total += int64(count)
-			if total > MaxLocalProfileBytes {
-				return control.Profile{}, fmt.Errorf("local profile exceeds %d byte limit", MaxLocalProfileBytes)
-			}
-			chunk := append([]byte(nil), buffer[:count]...)
-			if err := stream.Send(&controlv1.AddLocalProfileRequest{Part: &controlv1.AddLocalProfileRequest_ContentChunk{ContentChunk: chunk}}); err != nil {
-				return control.Profile{}, fmt.Errorf("send local profile content: %w", err)
-			}
-		}
-		if readErr == io.EOF {
-			break
-		}
-		if readErr != nil {
-			return control.Profile{}, fmt.Errorf("read local profile content: %w", readErr)
-		}
-	}
-	response, err := stream.CloseAndRecv()
-	if err != nil {
-		return control.Profile{}, fmt.Errorf("add local profile: %w", err)
-	}
-	return profileFromProto(response), nil
-}
-
-func (c *GRPCClient) UpdateProfileName(ctx context.Context, id, name string) (control.Profile, error) {
-	response, err := c.api.UpdateProfile(ctx, &controlv1.UpdateProfileRequest{ProfileId: id, Name: name})
-	if err != nil {
-		return control.Profile{}, fmt.Errorf("update profile: %w", err)
-	}
-	return profileFromProto(response), nil
-}
-
-func (c *GRPCClient) RefreshProfile(ctx context.Context, id string) error {
-	response, err := c.api.RefreshProfile(ctx, &controlv1.RefreshProfileRequest{ProfileId: id})
-	if err != nil {
-		return fmt.Errorf("refresh profile: %w", err)
-	}
-	return operationError("refresh profile", response)
-}
-
-func (c *GRPCClient) DeleteProfile(ctx context.Context, id string) error {
-	response, err := c.api.DeleteProfile(ctx, &controlv1.DeleteProfileRequest{ProfileId: id})
-	if err != nil {
-		return fmt.Errorf("delete profile: %w", err)
-	}
-	return operationError("delete profile", response)
-}
-
-func (c *GRPCClient) SetActiveProfile(ctx context.Context, id string) error {
-	response, err := c.api.SetActiveProfile(ctx, &controlv1.SetActiveProfileRequest{ProfileId: id})
-	if err != nil {
-		return fmt.Errorf("activate profile: %w", err)
-	}
-	return operationError("activate profile", response)
-}
-
-func (c *GRPCClient) ListOutboundGroups(ctx context.Context) ([]control.OutboundGroup, error) {
-	response, err := c.api.ListOutboundGroups(ctx, &controlv1.ListOutboundGroupsRequest{})
-	if err != nil {
-		return nil, fmt.Errorf("list outbound groups: %w", err)
-	}
-	groups := make([]control.OutboundGroup, 0, len(response.GetGroups()))
-	for _, group := range response.GetGroups() {
-		outbounds := make([]control.Outbound, 0, len(group.GetOutbounds()))
-		for _, outbound := range group.GetOutbounds() {
-			outbounds = append(outbounds, control.Outbound{ID: outbound.GetId(), Tag: outbound.GetTag(), Protocol: outbound.GetProtocol(), Selectable: outbound.GetSelectable(), DelayMillis: outbound.GetDelayMillis(), LastTestUnix: outbound.GetLastTestUnix(), EndpointSummary: outbound.GetEndpointSummary()})
-		}
-		groups = append(groups, control.OutboundGroup{ID: group.GetId(), Name: group.GetName(), SelectedOutboundID: group.GetSelectedOutboundId(), Outbounds: outbounds})
-	}
-	return groups, nil
-}
-
-func (c *GRPCClient) SelectOutbound(ctx context.Context, groupID, outboundID string) error {
-	response, err := c.api.SelectOutbound(ctx, &controlv1.SelectOutboundRequest{GroupId: groupID, OutboundId: outboundID})
-	if err != nil {
-		return fmt.Errorf("select outbound: %w", err)
-	}
-	return operationError("select outbound", response)
-}
-
-func (c *GRPCClient) TestOutbounds(ctx context.Context, scope control.TestScope) error {
-	request := &controlv1.TestOutboundsRequest{}
-	switch {
-	case scope.OutboundID != "":
-		request.Scope = &controlv1.TestOutboundsRequest_OutboundId{OutboundId: scope.OutboundID}
-	case scope.GroupID != "":
-		request.Scope = &controlv1.TestOutboundsRequest_GroupId{GroupId: scope.GroupID}
-	case scope.AllVisible:
-		request.Scope = &controlv1.TestOutboundsRequest_AllVisible{AllVisible: true}
-	default:
-		return fmt.Errorf("test outbounds: no test scope")
-	}
-	response, err := c.api.TestOutbounds(ctx, request)
-	if err != nil {
-		return fmt.Errorf("test outbounds: %w", err)
-	}
-	return operationError("test outbounds", response)
-}
-
-func (c *GRPCClient) TailLogs(ctx context.Context, tail uint32, level control.LogLevel, follow bool) (<-chan control.LogEntry, error) {
-	stream, err := c.api.TailLogs(ctx, &controlv1.TailLogsRequest{InitialTail: tail, MinimumLevel: logLevelToProto(level), Follow: follow})
-	if err != nil {
-		return nil, fmt.Errorf("tail logs: %w", err)
-	}
-	entries := make(chan control.LogEntry)
 	go func() {
-		defer close(entries)
+		for {
+			entry, err := infoStream.Recv()
+			if err != nil {
+				return
+			}
+			info = entry
+			emit()
+		}
+	}()
+
+	return out, nil
+}
+
+func (c *GRPCClient) OutboundGroups(ctx context.Context) ([]OutboundGroup, error) {
+	stream, err := c.api.OutboundsInfo(ctx, &hcommon.Empty{})
+	if err != nil {
+		return nil, err
+	}
+	list, err := stream.Recv()
+	if err != nil {
+		return nil, err
+	}
+	return groupsFromCore(list), nil
+}
+
+func (c *GRPCClient) SelectOutbound(ctx context.Context, group, outbound string) error {
+	response, err := c.api.SelectOutbound(ctx, &hcore.SelectOutboundRequest{GroupTag: group, OutboundTag: outbound})
+	if err != nil {
+		return err
+	}
+	if response.GetCode() != hcommon.ResponseCode_OK {
+		return fmt.Errorf("select outbound: %s", response.GetMessage())
+	}
+	return nil
+}
+
+func (c *GRPCClient) TestOutbound(ctx context.Context, tag string) error {
+	response, err := c.api.UrlTest(ctx, &hcore.UrlTestRequest{Tag: tag})
+	if err != nil {
+		return err
+	}
+	if response.GetCode() != hcommon.ResponseCode_OK {
+		return fmt.Errorf("url test: %s", response.GetMessage())
+	}
+	return nil
+}
+
+func (c *GRPCClient) Parse(ctx context.Context, content string) error {
+	response, err := c.api.Parse(ctx, &hcore.ParseRequest{Content: content})
+	if err != nil {
+		return err
+	}
+	if response.GetResponseCode() != hcommon.ResponseCode_OK {
+		return fmt.Errorf("%s", response.GetMessage())
+	}
+	return nil
+}
+
+func (c *GRPCClient) ChangeSettings(ctx context.Context, json string) error {
+	if _, err := c.api.ChangeHiddifySettings(ctx, &hcore.ChangeHiddifySettingsRequest{HiddifySettingsJson: json}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// WatchLogs streams the core's bounded log output. The caller cancels via ctx.
+func (c *GRPCClient) WatchLogs(ctx context.Context, level LogLevel) (<-chan LogEntry, error) {
+	stream, err := c.api.LogListener(ctx, &hcore.LogRequest{Level: logLevelToCore(level)})
+	if err != nil {
+		return nil, err
+	}
+	out := make(chan LogEntry)
+	go func() {
+		defer close(out)
 		for {
 			entry, err := stream.Recv()
 			if err != nil {
 				return
 			}
-			converted := control.LogEntry{Sequence: entry.GetSequence(), TimestampUnix: entry.GetTimestampUnixNano(), Level: logLevelFromProto(entry.GetLevel()), Component: entry.GetComponent(), Message: entry.GetMessage()}
 			select {
-			case entries <- converted:
+			case out <- logFromCore(entry):
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
-	return entries, nil
+	return out, nil
 }
 
-func (c *GRPCClient) ClearLogs(ctx context.Context) error {
-	response, err := c.api.ClearLogs(ctx, &controlv1.ClearLogsRequest{})
-	if err != nil {
-		return fmt.Errorf("clear logs: %w", err)
-	}
-	return operationError("clear logs", response)
-}
-
-func (c *GRPCClient) GetSettings(ctx context.Context) (control.Settings, error) {
-	response, err := c.api.GetSettings(ctx, &controlv1.GetSettingsRequest{})
-	if err != nil {
-		return control.Settings{}, fmt.Errorf("get settings: %w", err)
-	}
-	return settingsFromProto(response), nil
-}
-
-func (c *GRPCClient) ValidateSettings(ctx context.Context, candidate []byte) (control.ValidationResult, error) {
-	response, err := c.api.ValidateSettings(ctx, &controlv1.ValidateSettingsRequest{CandidateJson: candidate})
-	if err != nil {
-		return control.ValidationResult{}, fmt.Errorf("validate settings: %w", err)
-	}
-	errors := make([]control.FieldError, 0, len(response.GetErrors()))
-	for _, fieldError := range response.GetErrors() {
-		errors = append(errors, control.FieldError{Field: fieldError.GetField(), Message: fieldError.GetMessage()})
-	}
-	return control.ValidationResult{Valid: response.GetValid(), Errors: errors}, nil
-}
-
-func (c *GRPCClient) UpdateSettings(ctx context.Context, candidate []byte) (control.Settings, error) {
-	response, err := c.api.UpdateSettings(ctx, &controlv1.UpdateSettingsRequest{CandidateJson: candidate})
-	if err != nil {
-		return control.Settings{}, fmt.Errorf("update settings: %w", err)
-	}
-	return settingsFromProto(response), nil
-}
-
-func (c *GRPCClient) ResetSettings(ctx context.Context) (control.Settings, error) {
-	response, err := c.api.ResetSettings(ctx, &controlv1.ResetSettingsRequest{})
-	if err != nil {
-		return control.Settings{}, fmt.Errorf("reset settings: %w", err)
-	}
-	return settingsFromProto(response), nil
-}
-
-func (c *GRPCClient) ExportSettings(ctx context.Context, includeSecrets bool) ([]byte, error) {
-	response, err := c.api.ExportSettings(ctx, &controlv1.ExportSettingsRequest{IncludeSecrets: includeSecrets})
-	if err != nil {
-		return nil, fmt.Errorf("export settings: %w", err)
-	}
-	return response.GetJson(), nil
-}
-
-func (c *GRPCClient) ImportSettings(ctx context.Context, candidate []byte) (control.Settings, error) {
-	response, err := c.api.ImportSettings(ctx, &controlv1.ImportSettingsRequest{Json: candidate})
-	if err != nil {
-		return control.Settings{}, fmt.Errorf("import settings: %w", err)
-	}
-	return settingsFromProto(response), nil
-}
-
-func (c *GRPCClient) GetServiceInfo(ctx context.Context) (control.ServiceInfo, error) {
-	response, err := c.api.GetServiceInfo(ctx, &controlv1.GetServiceInfoRequest{})
-	if err != nil {
-		return control.ServiceInfo{}, fmt.Errorf("get service info: %w", err)
-	}
-	return control.ServiceInfo{Installed: response.GetInstalled(), Enabled: response.GetEnabled(), Running: response.GetRunning(), LastError: response.GetLastError()}, nil
-}
-
-func (c *GRPCClient) SetAutoConnect(ctx context.Context, enabled bool) error {
-	response, err := c.api.SetAutoConnect(ctx, &controlv1.SetAutoConnectRequest{Enabled: enabled})
-	if err != nil {
-		return fmt.Errorf("set auto-connect: %w", err)
-	}
-	return operationError("set auto-connect", response)
-}
-
-func operationError(action string, response *controlv1.OperationResult) error {
-	if response == nil || response.GetErrorCode() == controlv1.ErrorCode_ERROR_CODE_UNSPECIFIED || response.GetErrorCode() == controlv1.ErrorCode_ERROR_CODE_OK || response.GetErrorCode() == controlv1.ErrorCode_ERROR_CODE_ALREADY_IN_REQUESTED_STATE {
+func operationError(response *hcore.CoreInfoResponse) error {
+	if response.GetCoreState() == hcore.CoreStates_STARTED || response.GetCoreState() == hcore.CoreStates_STOPPED {
 		return nil
 	}
-	return fmt.Errorf("%s: %s: %s", action, response.GetErrorCode().String(), response.GetMessage())
-}
-
-func (c *GRPCClient) GetDiagnostics(ctx context.Context) (control.Diagnostics, error) {
-	response, err := c.api.GetDiagnostics(ctx, &controlv1.GetDiagnosticsRequest{})
-	if err != nil {
-		return control.Diagnostics{}, fmt.Errorf("get diagnostics: %w", err)
+	// A non-terminal state with a message means the operation did not succeed
+	// (e.g. already-started/stopped is informational).
+	switch response.GetMessageType() {
+	case hcore.MessageType_ALREADY_STARTED, hcore.MessageType_ALREADY_STOPPED, hcore.MessageType_EMPTY:
+		return nil
 	}
-	return control.Diagnostics{DaemonVersion: response.GetDaemonVersion(), CoreVersion: response.GetCoreVersion(), SocketPath: response.GetSocketPath(), ActiveListeners: response.GetActiveListeners(), LastServiceError: response.GetLastServiceError()}, nil
+	return fmt.Errorf("%s", response.GetMessage())
 }
 
-// PollAgent exchanges user-session proxy health for a daemon-owned desired
-// state. It is used only by hiddify-agent, over the same local IPC boundary.
-func (c *GRPCClient) PollAgent(ctx context.Context, applied bool, lastError string) (control.AgentInstruction, error) {
-	response, err := c.api.PollAgent(ctx, &controlv1.AgentPollRequest{Applied: applied, LastError: lastError})
-	if err != nil {
-		return control.AgentInstruction{}, fmt.Errorf("poll agent: %w", err)
+func stateFromCore(response *hcore.CoreInfoResponse) (ConnectionState, string) {
+	state := StateStopped
+	switch response.GetCoreState() {
+	case hcore.CoreStates_STARTING:
+		state = StateStarting
+	case hcore.CoreStates_STARTED:
+		state = StateStarted
+	case hcore.CoreStates_STOPPING:
+		state = StateStopping
 	}
-	return control.AgentInstruction{SystemProxyEnabled: response.GetSystemProxyEnabled(), Host: response.GetHost(), Port: response.GetPort(), LeaseSeconds: response.GetLeaseSeconds()}, nil
+	return state, response.GetMessage()
 }
 
-func settingsFromProto(settings *controlv1.Settings) control.Settings {
-	return control.Settings{RedactedJSON: append([]byte(nil), settings.GetRedactedJson()...)}
+func snapshotFromParts(state ConnectionState, message string, info *hcore.SystemInfo) Snapshot {
+	snapshot := Snapshot{State: state, Message: message}
+	snapshot.Memory = info.GetMemory()
+	snapshot.Uplink = info.GetUplink()
+	snapshot.Downlink = info.GetDownlink()
+	snapshot.UplinkTotal = info.GetUplinkTotal()
+	snapshot.DownlinkTotal = info.GetDownlinkTotal()
+	snapshot.Connections = info.GetConnectionsIn() + info.GetConnectionsOut()
+	snapshot.CurrentOutbound = info.GetCurrentOutbound()
+	snapshot.CurrentProfile = info.GetCurrentProfile()
+	return snapshot
 }
 
-func profileFromProto(profile *controlv1.Profile) control.Profile {
-	return control.Profile{
-		ID:                    profile.GetId(),
-		Name:                  profile.GetName(),
-		Kind:                  profileKindFromProto(profile.GetKind()),
-		Active:                profile.GetActive(),
-		RedactedURL:           profile.GetRedactedUrl(),
-		LastSuccessfulRefresh: profile.GetLastSuccessfulRefreshUnix(),
-		LastAttemptedRefresh:  profile.GetLastAttemptedRefreshUnix(),
-		UpdateIntervalSeconds: profile.GetUpdateIntervalSeconds(),
-		Subscription: control.Usage{
-			UploadBytes:   profile.GetSubscription().GetUploadBytes(),
-			DownloadBytes: profile.GetSubscription().GetDownloadBytes(),
-			TotalBytes:    profile.GetSubscription().GetTotalBytes(),
-			ExpiryUnix:    profile.GetSubscription().GetExpiryUnix(),
-		},
-		LastRefreshError: profile.GetLastRefreshError(),
+func groupsFromCore(list *hcore.OutboundGroupList) []OutboundGroup {
+	groups := make([]OutboundGroup, 0, len(list.GetItems()))
+	for _, group := range list.GetItems() {
+		converted := OutboundGroup{Tag: group.GetTag(), Type: group.GetType(), Selected: group.GetSelected(), Selectable: group.GetSelectable()}
+		for _, item := range group.GetItems() {
+			converted.Items = append(converted.Items, Outbound{
+				Tag: item.GetTag(), Type: item.GetType(), DelayMillis: int64(item.GetUrlTestDelay()),
+				Selected: item.GetIsSelected(), IsSecure: item.GetIsSecure(), Host: item.GetHost(), Port: item.GetPort(),
+			})
+		}
+		groups = append(groups, converted)
 	}
+	return groups
 }
 
-func profileKindFromProto(kind controlv1.ProfileKind) control.ProfileKind {
-	if kind == controlv1.ProfileKind_PROFILE_KIND_LOCAL {
-		return control.ProfileLocal
+func logFromCore(entry *hcore.LogMessage) LogEntry {
+	var timestamp time.Time
+	if entry.GetTime() != nil {
+		timestamp = entry.GetTime().AsTime()
+	} else {
+		timestamp = time.Now()
 	}
-	return control.ProfileRemote
+	return LogEntry{Level: logLevelFromCore(entry.GetLevel()), Component: entry.GetType().String(), Message: entry.GetMessage(), Time: timestamp}
 }
 
-func snapshotFromProto(snapshot *controlv1.Snapshot) control.Snapshot {
-	return control.Snapshot{
-		APIMajor:          snapshot.GetApiMajor(),
-		APIMinor:          snapshot.GetApiMinor(),
-		Revision:          snapshot.GetRevision(),
-		EventSequence:     snapshot.GetEventSequence(),
-		DaemonVersion:     snapshot.GetDaemonVersion(),
-		CoreVersion:       snapshot.GetCoreVersion(),
-		ConnectionState:   connectionStateFromProto(snapshot.GetConnectionState()),
-		ActiveProfileID:   snapshot.GetActiveProfileId(),
-		ActiveProfileName: snapshot.GetActiveProfileName(),
-		RequestedMode:     snapshot.GetRequestedMode(),
-		EffectiveMode:     snapshot.GetEffectiveMode(),
-		SelectedOutbound:  snapshot.GetSelectedOutbound(),
-		LastError:         snapshot.GetLastError(),
-		Traffic: control.TrafficStats{
-			UplinkBytesPerSecond:   snapshot.GetTraffic().GetUplinkBytesPerSecond(),
-			DownlinkBytesPerSecond: snapshot.GetTraffic().GetDownlinkBytesPerSecond(),
-			TotalUploadBytes:       snapshot.GetTraffic().GetTotalUploadBytes(),
-			TotalDownloadBytes:     snapshot.GetTraffic().GetTotalDownloadBytes(),
-		},
-		System: control.SystemStats{
-			MemoryBytes:     snapshot.GetSystem().GetMemoryBytes(),
-			ConnectionCount: snapshot.GetSystem().GetConnectionCount(),
-		},
-		Agent: control.AgentHealth{
-			Required:  snapshot.GetAgent().GetRequired(),
-			Connected: snapshot.GetAgent().GetConnected(),
-			Applied:   snapshot.GetAgent().GetApplied(),
-			LastError: snapshot.GetAgent().GetLastError(),
-		},
-		Capabilities: snapshot.GetCapabilities(),
-		AutoConnect:  snapshot.GetAutoConnect(),
-	}
-}
-
-func eventFromProto(event *controlv1.Event) control.Event {
-	converted := control.Event{Sequence: event.GetSequence(), Revision: event.GetRevision()}
-	switch change := event.GetChange().(type) {
-	case *controlv1.Event_Connection:
-		converted.Kind = control.EventConnection
-		converted.ConnectionState = connectionStateFromProto(change.Connection.GetState())
-		converted.RequestedMode = change.Connection.GetRequestedMode()
-		converted.EffectiveMode = change.Connection.GetEffectiveMode()
-	case *controlv1.Event_Profile:
-		converted.Kind = control.EventProfile
-		converted.ActiveProfileID = change.Profile.GetActiveProfileId()
-		converted.ActiveProfileName = change.Profile.GetActiveProfileName()
-	case *controlv1.Event_Outbound:
-		converted.Kind = control.EventOutbound
-		converted.SelectedOutbound = change.Outbound.GetSelectedOutbound()
-	case *controlv1.Event_Warning:
-		converted.Kind = control.EventWarning
-		converted.LastError = change.Warning.GetMessage()
-	case *controlv1.Event_Agent:
-		converted.Kind = control.EventAgent
-		converted.Agent = control.AgentHealth{Required: change.Agent.GetRequired(), Connected: change.Agent.GetConnected(), Applied: change.Agent.GetApplied(), LastError: change.Agent.GetLastError()}
-	case *controlv1.Event_ResyncRequired:
-		converted.Kind = control.EventResync
-	default:
-		converted.Kind = control.EventResync
-	}
-	return converted
-}
-
-func connectionStateFromProto(state controlv1.ConnectionState) control.ConnectionState {
-	switch state {
-	case controlv1.ConnectionState_CONNECTION_STATE_STARTING:
-		return control.ConnectionStarting
-	case controlv1.ConnectionState_CONNECTION_STATE_STARTED:
-		return control.ConnectionStarted
-	case controlv1.ConnectionState_CONNECTION_STATE_STOPPING:
-		return control.ConnectionStopping
-	case controlv1.ConnectionState_CONNECTION_STATE_RECONNECT_WAIT:
-		return control.ConnectionReconnectWait
-	case controlv1.ConnectionState_CONNECTION_STATE_FAILED:
-		return control.ConnectionFailed
-	default:
-		return control.ConnectionStopped
-	}
-}
-
-func connectionModeToProto(mode control.ConnectionMode) controlv1.ConnectionMode {
-	switch mode {
-	case control.ModeTUN:
-		return controlv1.ConnectionMode_CONNECTION_MODE_TUN
-	case control.ModeSystemProxy:
-		return controlv1.ConnectionMode_CONNECTION_MODE_SYSTEM_PROXY
-	case control.ModeLocalProxy:
-		return controlv1.ConnectionMode_CONNECTION_MODE_LOCAL_PROXY
-	default:
-		return controlv1.ConnectionMode_CONNECTION_MODE_UNSPECIFIED
-	}
-}
-
-func logLevelToProto(level control.LogLevel) controlv1.LogLevel {
+func logLevelToCore(level LogLevel) hcore.LogLevel {
 	switch level {
-	case control.LogDebug:
-		return controlv1.LogLevel_LOG_LEVEL_DEBUG
-	case control.LogWarn:
-		return controlv1.LogLevel_LOG_LEVEL_WARN
-	case control.LogError:
-		return controlv1.LogLevel_LOG_LEVEL_ERROR
+	case LogDebug:
+		return hcore.LogLevel_DEBUG
+	case LogWarn:
+		return hcore.LogLevel_WARNING
+	case LogError:
+		return hcore.LogLevel_ERROR
 	default:
-		return controlv1.LogLevel_LOG_LEVEL_INFO
+		return hcore.LogLevel_INFO
 	}
 }
 
-func logLevelFromProto(level controlv1.LogLevel) control.LogLevel {
+func logLevelFromCore(level hcore.LogLevel) LogLevel {
 	switch level {
-	case controlv1.LogLevel_LOG_LEVEL_DEBUG:
-		return control.LogDebug
-	case controlv1.LogLevel_LOG_LEVEL_WARN:
-		return control.LogWarn
-	case controlv1.LogLevel_LOG_LEVEL_ERROR:
-		return control.LogError
+	case hcore.LogLevel_DEBUG, hcore.LogLevel_TRACE:
+		return LogDebug
+	case hcore.LogLevel_WARNING:
+		return LogWarn
+	case hcore.LogLevel_ERROR, hcore.LogLevel_FATAL:
+		return LogError
 	default:
-		return control.LogInfo
+		return LogInfo
 	}
 }
-
-var _ control.Client = (*GRPCClient)(nil)
-var _ control.ConnectionOperator = (*GRPCClient)(nil)
-var _ control.Watcher = (*GRPCClient)(nil)
-var _ control.ProfileReader = (*GRPCClient)(nil)
-var _ control.ProfileWriter = (*GRPCClient)(nil)
-var _ control.LocalProfileWriter = (*GRPCClient)(nil)
-var _ control.OutboundOperator = (*GRPCClient)(nil)
-var _ control.LogReader = (*GRPCClient)(nil)
-var _ control.SettingsOperator = (*GRPCClient)(nil)
-var _ control.ServiceReader = (*GRPCClient)(nil)
-var _ io.Closer = (*GRPCClient)(nil)

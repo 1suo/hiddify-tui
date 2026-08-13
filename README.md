@@ -1,58 +1,55 @@
 # hiddify-tui
 
-`hiddify-tui` is a thin, local terminal client for an always-running
-`hiddify-core` daemon. It never embeds, starts, or owns the networking core.
+`hiddify-tui` is a thin terminal client for a running
+[`hiddify-core`](https://github.com/hiddify/hiddify-core). It talks to the
+core's existing `Core` gRPC service over TCP (`127.0.0.1:17078`) and owns
+profiles client-side; it never embeds or starts the networking core.
 
-## Current increment
+## Architecture
 
-This repository currently contains the first client-side foundation:
+```text
+hiddify-tui ──gRPC (Core service)──► hiddify-core (GUI, or HiddifyCli run)
+             127.0.0.1:17078
+```
 
-- a versioned protobuf/gRPC control API in `proto/control/v1`;
-- Unix-domain-socket gRPC client, snapshot/event recovery, and deterministic fake server;
-- stable `status` formatting and JSON/exit-code tests;
-- an alternate-screen Bubble Tea v2 dashboard, opened by running
-  `hiddify-tui` from a terminal, with explicit connect/disconnect/restart
-  controls;
-- a standalone `hiddify-agent` that restores the logged-in user's system proxy
-  settings after an expired lease or clean session shutdown, with platform
-  backends for GNOME (Linux), System Configuration via `networksetup` (macOS),
-  and the Internet Settings registry (Windows);
-- `hiddify-tui migrate gui`, which produces a read-only migration plan for the
-  current Hiddify GUI SQLite profile database and its `configs/` directory;
-  the legacy `hiddify-migrate` wrapper remains available;
-- native service assets for Linux (systemd), macOS (launchd), and Windows
-  (service + scheduled task) under `packaging/`, and a release script that
-  produces checksums and SBOMs (`scripts/release.sh`).
+- **Connection / status / outbounds / logs / settings** come from the core's
+  `Core` gRPC service.
+- **Profiles** are stored client-side in `~/.local/share/hiddify/profiles.json`
+  and mirrored from the GUI's model: remote subscriptions (downloaded and
+  header-parsed) and local configs. The active profile's content is handed to
+  the core on connect via `Start(ConfigContent=...)`.
 
-The client connects to `/run/hiddify/control.sock` on Linux and
-`/var/run/hiddify/control.sock` on macOS. The companion core branch implements
-the Linux endpoint; published cross-platform core artifacts remain a release
-dependency.
+## Usage
+
+Run `hiddify-tui` in a terminal for the interactive dashboard (profiles,
+outbounds, and logs panes):
+
+```sh
+hiddify-tui                     # TUI, connecting to 127.0.0.1:17078
+hiddify-tui --address 127.0.0.1:17078
+```
+
+Scriptable CLI:
+
+```sh
+hiddify-tui status
+hiddify-tui --json status
+hiddify-tui profile add https://sub.example.com/…
+hiddify-tui profile add-file /path/to/config.json
+hiddify-tui profile activate <id>
+hiddify-tui connect
+hiddify-tui outbound list
+hiddify-tui logs --level warn
+```
+
+Exit codes: `0` success, `2` usage, `3` core unavailable, `4` rejected.
 
 ## Development
 
 ```sh
-GOCACHE=/tmp/hiddify-tui-go-cache go test ./...
-GOCACHE=/tmp/hiddify-tui-go-cache go run ./cmd/hiddify-tui --version
+go build ./...
+go test ./...
 ```
 
-Create a redacted, non-mutating GUI migration plan with explicit source paths:
-
-```sh
-go run ./cmd/hiddify-tui migrate gui --database /path/to/db --configs /path/to/configs --dry-run
-```
-
-After reviewing the plan, import it only after completely exiting the GUI and
-its core process:
-
-```sh
-go run ./cmd/hiddify-tui migrate gui --database /path/to/db --configs /path/to/configs \
-  --apply --yes --gui-exited
-```
-
-Applying requires the compatible daemon control endpoint. The source database
-and config files remain read-only in both modes.
-
-The complete delivery plan and cross-repository dependencies are in
-[`TODO.md`](TODO.md). Operational guidance (install, connect, recovery, and
-uninstall) is in [`docs/operations.md`](docs/operations.md).
+The core protocol schemas are vendored from `hiddify-core`
+(`proto/hcore`, `proto/hcommon`) and generated with `buf` into `gen/`.
