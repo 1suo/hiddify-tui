@@ -47,6 +47,8 @@ type Dashboard struct {
 	action            string
 	adding            bool
 	input             string
+
+	updates chan update
 }
 
 type update struct {
@@ -67,7 +69,7 @@ func NewDashboard(core client.Client, store *profile.Store, err error) Dashboard
 	return Dashboard{core: core, store: store, err: err, profiles: store.List()}
 }
 
-func (m Dashboard) Init() tea.Cmd { return waitForUpdate(m.ctx, m.core) }
+func (m Dashboard) Init() tea.Cmd { return waitForStream(m.updates) }
 
 func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -139,7 +141,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.logs = m.logs[len(m.logs)-maxLogLines:]
 			}
 		}
-		return m, waitForUpdate(m.ctx, m.core)
+		return m, waitForStream(m.updates)
 	case actionResult:
 		if msg.err != nil {
 			m.action = msg.action + ": " + msg.err.Error()
@@ -330,6 +332,7 @@ func Run(core client.Client, store *profile.Store, err error) error {
 func RunWithOptions(core client.Client, store *profile.Store, err error, noColor bool) error {
 	model := NewDashboard(core, store, err)
 	model.ctx = context.Background()
+	model.updates = streamUpdates(model.ctx, core)
 	options := []tea.ProgramOption{}
 	if noColor {
 		options = append(options, tea.WithColorProfile(colorprofile.ASCII))
@@ -341,35 +344,62 @@ func RunWithOptions(core client.Client, store *profile.Store, err error, noColor
 	return runErr
 }
 
-func waitForUpdate(ctx context.Context, core client.Client) tea.Cmd {
+// streamUpdates owns the long-lived status/log streams and outbound polling for
+// the lifetime of the program. Subscribing once avoids re-dialing gRPC streams
+// on every update, which would starve the input loop.
+func streamUpdates(ctx context.Context, core client.Client) chan update {
+	updates := make(chan update, 16)
 	if core == nil {
-		return nil
+		close(updates)
+		return updates
 	}
-	return func() tea.Msg {
-		statusCh, _ := core.WatchStatus(ctx)
-		logCh, _ := core.WatchLogs(ctx, client.LogInfo)
+	go func() {
+		defer close(updates)
+		statusCh, err := core.WatchStatus(ctx)
+		if err != nil {
+			updates <- update{err: err}
+			return
+		}
+		logCh, err := core.WatchLogs(ctx, client.LogInfo)
+		if err != nil {
+			logCh = nil
+		}
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case snapshot, ok := <-statusCh:
 				if !ok {
-					return update{err: errors.New("core status stream ended")}
+					updates <- update{err: errors.New("core status stream ended")}
+					return
 				}
-				return update{snapshot: &snapshot}
+				updates <- update{snapshot: &snapshot}
 			case entry, ok := <-logCh:
 				if ok {
-					return update{logs: []client.LogEntry{entry}}
+					updates <- update{logs: []client.LogEntry{entry}}
 				}
 			case <-ticker.C:
-				groups, err := core.OutboundGroups(ctx)
-				if err == nil {
-					return update{groups: groups}
+				if groups, err := core.OutboundGroups(ctx); err == nil {
+					updates <- update{groups: groups}
 				}
 			case <-ctx.Done():
-				return update{err: errors.New("core unavailable")}
+				return
 			}
 		}
+	}()
+	return updates
+}
+
+func waitForStream(updates chan update) tea.Cmd {
+	if updates == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		msg, ok := <-updates
+		if !ok {
+			return update{err: errors.New("core unavailable")}
+		}
+		return msg
 	}
 }
 

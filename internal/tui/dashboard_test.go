@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -85,5 +86,22 @@ func TestDashboardDisconnectRequiresConfirmation(t *testing.T) {
 	}
 	if core.Disconnects != 1 {
 		t.Fatalf("disconnects = %d, want 1", core.Disconnects)
+	}
+}
+
+func TestProgramQuitsOnQ(t *testing.T) {
+	core := &client.FakeClient{StatusEvents: []client.Snapshot{{State: client.StateStarted}}}
+	store, _ := profile.Open("/tmp/hiddify-tui-test-profiles.json")
+	model := NewDashboard(core, store, nil)
+	model.ctx = context.Background()
+	model.updates = streamUpdates(model.ctx, core)
+
+	_, err := tea.NewProgram(model,
+		tea.WithInput(strings.NewReader("q")),
+		tea.WithOutput(io.Discard),
+		tea.WithEnvironment([]string{"TERM=xterm-256color"}),
+	).Run()
+	if err != nil {
+		t.Fatalf("quit run returned error: %v", err)
 	}
 }
