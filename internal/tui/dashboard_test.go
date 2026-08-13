@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"io"
 	"regexp"
 	"strings"
@@ -134,6 +135,28 @@ func TestDashboardAddInputTreatsEnterAsNewline(t *testing.T) {
 	if result := cmd().(actionResult); result.err != nil {
 		// "line1" is not a valid config; addProfile reports the parse error.
 		t.Logf("submit result (expected error for invalid config): %v", result.err)
+	}
+}
+
+func TestSimplifyError(t *testing.T) {
+	cases := map[string]string{
+		"rpc error: code = Unavailable desc = connection error: desc = transport: connection refused": "transport: connection refused",
+		"rpc error: code = InvalidArgument desc = profile content is invalid":                         "profile content is invalid",
+		"plain error": "plain error",
+	}
+	for in, want := range cases {
+		if got := simplifyError(errors.New(in)); got != want {
+			t.Errorf("simplifyError(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestDashboardStatusUnavailable(t *testing.T) {
+	model := newTestDashboard()
+	model.err = errors.New("rpc error: code = Unavailable desc = connection error: desc = refused")
+	view := model.render()
+	if !strings.Contains(view, "core unavailable") || strings.Contains(view, "rpc error") {
+		t.Fatalf("unavailable status:\n%s", view)
 	}
 }
 

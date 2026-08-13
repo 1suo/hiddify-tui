@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -144,7 +145,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitForStream(m.updates)
 	case actionResult:
 		if msg.err != nil {
-			m.action = msg.action + ": " + msg.err.Error()
+			m.action = msg.action + ": " + simplifyError(msg.err)
 		} else {
 			m.action = msg.action + " requested"
 		}
@@ -154,7 +155,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Dashboard) inputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "ctrl+c":
+	case "q", "ctrl+c":
 		return m, tea.Quit
 	case "esc":
 		m.adding = false
@@ -521,9 +522,18 @@ func (m Dashboard) render() string {
 }
 
 func (m Dashboard) statusLine() string {
+	if m.err != nil {
+		return "core unavailable · " + simplifyError(m.err)
+	}
 	state := string(m.snapshot.State)
 	if state == "" {
 		state = "stopped"
+	}
+	if state != "started" {
+		if m.action != "" {
+			return "state " + state + "  ·  " + m.action
+		}
+		return "state " + state
 	}
 	profile := m.snapshot.CurrentProfile
 	if profile == "" {
@@ -535,6 +545,18 @@ func (m Dashboard) statusLine() string {
 		line += "  ·  " + m.action
 	}
 	return line
+}
+
+// simplifyError strips gRPC transport boilerplate so the status line stays
+// readable.
+func simplifyError(err error) string {
+	message := err.Error()
+	re := regexp.MustCompile(`^rpc error: code = \w+ desc = `)
+	message = re.ReplaceAllString(message, "")
+	if idx := strings.Index(message, " desc = "); idx >= 0 {
+		message = message[idx+len(" desc = "):]
+	}
+	return message
 }
 
 func (m Dashboard) profileLines() ([]string, int) {
