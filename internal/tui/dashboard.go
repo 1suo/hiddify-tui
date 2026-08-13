@@ -172,7 +172,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.spawned {
 				return m, m.stopCore()
 			}
-			m.action = "core is managed externally (service); start/stop it there"
+			m.action = "core is external; start/stop it there"
 		case "A":
 			return m, m.toggleAutoStart()
 		}
@@ -198,7 +198,6 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, waitForStream(m.updates)
 		}
 		if msg.err != nil {
-			m.err = msg.err
 			m.stopStream()
 			m.core = nil
 			m.spawned = false
@@ -206,6 +205,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.snapshot = client.Snapshot{}
 			m.groups = nil
 			m.logs = nil
+			m.action = "core stopped (press s to start)"
 			return m, nil
 		}
 		if msg.snapshot != nil {
@@ -991,7 +991,7 @@ func (m Dashboard) footerLine() string {
 		if m.spawned {
 			corePart = "[s] core on"
 		} else {
-			corePart = "core on (service)"
+			corePart = "core on (external)"
 		}
 	}
 	autostart := "off"
