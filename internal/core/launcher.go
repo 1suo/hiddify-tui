@@ -13,12 +13,11 @@ import (
 	"github.com/1suo/hiddify-tui/internal/client"
 )
 
-// bootstrapConfig is a minimal config with a non-predefined outbound so the
-// core can start and serve its gRPC API without a real profile. The TUI then
-// switches to the active profile via Connect. A bare "direct" outbound panics
-// the core config builder, which filters predefined tags and then indexes an
-// empty list.
-const bootstrapConfig = `{"outbounds":[{"type":"vless","tag":"bootstrap","server":"127.0.0.1","server_port":1,"uuid":"00000000-0000-0000-0000-000000000000"}]}`
+// bootstrapConfig is a minimal config the core can start and serve from: a
+// "direct" outbound (required by the core's DNS detour) plus a non-predefined
+// outbound (required by the selector builder). The TUI switches to the real
+// profile via Connect afterward.
+const bootstrapConfig = `{"outbounds":[{"type":"direct","tag":"direct"},{"type":"vless","tag":"bootstrap","server":"127.0.0.1","server_port":1,"uuid":"00000000-0000-0000-0000-000000000000"}]}`
 
 // Launcher owns a headless core process when the client needs to start one.
 type Launcher struct {

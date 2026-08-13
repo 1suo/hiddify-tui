@@ -415,14 +415,15 @@ var (
 	idleBorder   = lipgloss.Color("8")
 )
 
-// renderPane draws a fixed-size bordered pane. Each body line is truncated to
-// the inner width and the cursor line is highlighted; the pane is always
+// renderPane draws a fixed-size ASCII-bordered pane with the title inscribed
+// in the top border. The cursor line is highlighted; the pane is always
 // exactly width x height.
 func renderPane(title string, width, height int, focused bool, lines []string, cursor int) string {
-	color := idleBorder
+	border := lipgloss.NewStyle().Foreground(idleBorder)
 	if focused {
-		color = activeBorder
+		border = lipgloss.NewStyle().Foreground(activeBorder)
 	}
+
 	innerWidth := width - 2
 	if innerWidth < 1 {
 		innerWidth = 1
@@ -431,26 +432,37 @@ func renderPane(title string, width, height int, focused bool, lines []string, c
 	if innerHeight < 1 {
 		innerHeight = 1
 	}
-	body := make([]string, 0, innerHeight)
-	body = append(body, truncate(title, innerWidth))
+
+	titleText := " " + title + " "
+	fill := innerWidth - runeCount(titleText)
+	if fill < 0 {
+		fill = 0
+	}
+	top := border.Render("+" + titleText + strings.Repeat("-", fill) + "+")
+
+	rows := make([]string, 0, innerHeight)
 	for i, line := range lines {
-		if len(body) >= innerHeight {
+		if len(rows) >= innerHeight {
 			break
 		}
 		line = truncate(line, innerWidth)
+		line += strings.Repeat(" ", innerWidth-runeCount(line))
 		if i == cursor && focused {
 			line = lipgloss.NewStyle().Reverse(true).Render(line)
 		}
-		body = append(body, line)
+		rows = append(rows, border.Render("|")+line+border.Render("|"))
 	}
-	for len(body) < innerHeight {
-		body = append(body, "")
+	blank := strings.Repeat(" ", innerWidth)
+	for len(rows) < innerHeight {
+		rows = append(rows, border.Render("|")+blank+border.Render("|"))
 	}
-	style := lipgloss.NewStyle().
-		Width(width - 2).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(color)
-	return style.Render(strings.Join(body, "\n"))
+	bottom := border.Render("+" + strings.Repeat("-", innerWidth) + "+")
+
+	return strings.Join(append([]string{top}, append(rows, bottom)...), "\n")
+}
+
+func runeCount(value string) int {
+	return len([]rune(value))
 }
 
 func truncate(value string, width int) string {
@@ -461,7 +473,7 @@ func truncate(value string, width int) string {
 	if width <= 1 {
 		return string(runes[:width])
 	}
-	return string(runes[:width-1]) + "…"
+	return string(runes[:width-1]) + "~"
 }
 
 func (m Dashboard) View() tea.View {
@@ -523,7 +535,7 @@ func (m Dashboard) render() string {
 
 func (m Dashboard) statusLine() string {
 	if m.err != nil {
-		return "core unavailable · " + simplifyError(m.err)
+		return "core unavailable | " + simplifyError(m.err)
 	}
 	state := string(m.snapshot.State)
 	if state == "" {
@@ -531,7 +543,7 @@ func (m Dashboard) statusLine() string {
 	}
 	if state != "started" {
 		if m.action != "" {
-			return "state " + state + "  ·  " + m.action
+			return "state " + state + "  |  " + m.action
 		}
 		return "state " + state
 	}
@@ -539,10 +551,10 @@ func (m Dashboard) statusLine() string {
 	if profile == "" {
 		profile = "none"
 	}
-	line := fmt.Sprintf("state %s  running %s  ↓ %s  ↑ %s  outbound %s",
+	line := fmt.Sprintf("state %s  running %s  down %s  up %s  outbound %s",
 		state, profile, formatBytes(m.snapshot.Downlink), formatBytes(m.snapshot.Uplink), valueOr(m.snapshot.CurrentOutbound, "none"))
 	if m.action != "" {
-		line += "  ·  " + m.action
+		line += "  |  " + m.action
 	}
 	return line
 }
@@ -622,11 +634,11 @@ func (m Dashboard) footerLine() string {
 	if m.adding {
 		display := strings.ReplaceAll(m.input, "\n", " ")
 		if display == "" {
-			return "add profile › paste URL or config · enter newline · ctrl+d confirm · esc cancel"
+			return "add profile > paste URL or config | enter newline | ctrl+d confirm | esc cancel"
 		}
-		return "add profile › " + display + "  ·  ctrl+d confirm"
+		return "add profile > " + display + "  |  ctrl+d confirm"
 	}
-	return "tab pane · ↑↓ move · enter select · c/x/r conn · a add · d del · q quit"
+	return "tab pane | j/k move | enter select | c/x/r conn | a add | d del | q quit"
 }
 
 func formatBytes(value int64) string {

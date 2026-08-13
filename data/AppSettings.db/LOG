@@ -1,0 +1,43 @@
+=============== Aug 13, 2026 (MSK) ===============
+17:53:21.561433 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+17:53:21.564791 db@open opening
+17:53:21.565116 version@stat F·[] S·0B[] Sc·[]
+17:53:21.566807 db@janitor F·2 G·0
+17:53:21.566829 db@open done T·2.010639ms
+17:53:21.566869 db@close closing
+17:53:21.566964 db@close done T·85.83µs
+=============== Aug 13, 2026 (MSK) ===============
+17:53:21.721542 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+17:53:21.721758 version@stat F·[] S·0B[] Sc·[]
+17:53:21.721784 db@open opening
+17:53:21.721843 journal@recovery F·1
+17:53:21.725530 journal@recovery recovering @1
+17:53:21.726296 version@stat F·[] S·0B[] Sc·[]
+17:53:21.734201 db@janitor F·2 G·0
+17:53:21.734224 db@open done T·12.432636ms
+17:53:21.734387 db@close closing
+17:53:21.734442 db@close done T·54.726µs
+=============== Aug 13, 2026 (MSK) ===============
+17:53:31.415902 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+17:53:31.416145 version@stat F·[] S·0B[] Sc·[]
+17:53:31.416173 db@open opening
+17:53:31.416210 journal@recovery F·1
+17:53:31.421371 journal@recovery recovering @2
+17:53:31.426906 memdb@flush created L0@4 N·3 S·1KiB "\x17\f\x00..ame,v3":"\x1a\f\x00..ent,v2"
+17:53:31.431477 version@stat F·[1] S·1KiB[1KiB] Sc·[0.25]
+17:53:31.435710 db@janitor F·3 G·0
+17:53:31.435735 db@open done T·19.556157ms
+17:53:31.435920 db@close closing
+17:53:31.435965 db@close done T·44.141µs
+=============== Aug 13, 2026 (MSK) ===============
+17:54:06.697100 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+17:54:06.697227 version@stat F·[1] S·1KiB[1KiB] Sc·[0.25]
+17:54:06.697242 db@open opening
+17:54:06.697269 journal@recovery F·1
+17:54:06.700268 journal@recovery recovering @5
+17:54:06.705086 memdb@flush created L0@7 N·3 S·1KiB "\x17\f\x00..ame,v7":"\x1a\f\x00..ent,v6"
+17:54:06.707538 version@stat F·[2] S·2KiB[2KiB] Sc·[0.50]
+17:54:06.713923 db@janitor F·4 G·0
+17:54:06.713941 db@open done T·16.694917ms
+17:54:06.714092 db@close closing
+17:54:06.714170 db@close done T·69.584µs

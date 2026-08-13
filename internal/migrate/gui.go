@@ -144,5 +144,5 @@ func redactURL(value string) string {
 	if err != nil || parsed.Host == "" {
 		return "redacted"
 	}
-	return parsed.Scheme + "://" + parsed.Host + "/…"
+	return parsed.Scheme + "://" + parsed.Host + "/~"
 }
