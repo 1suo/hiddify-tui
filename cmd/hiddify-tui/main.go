@@ -18,10 +18,11 @@ import (
 	"github.com/charmbracelet/x/term"
 )
 
-const version = "0.1.0-dev"
+// version is overridable at build time with -ldflags "-X main.version=...".
+var version = "0.1.0-dev"
 
 func main() {
-	if socket, timeout, ok := tuiInvocation(os.Args[1:]); ok {
+	if socket, timeout, noColor, ok := tuiInvocation(os.Args[1:]); ok {
 		dialCtx, cancel := context.WithTimeout(context.Background(), timeout)
 		daemon, err := client.DialUnix(dialCtx, socket)
 		cancel()
@@ -29,13 +30,13 @@ func main() {
 			defer daemon.Close()
 		}
 		if err == nil {
-			if err := tui.RunLive(context.Background(), daemon, daemon); err != nil {
+			if err := tui.RunLiveWithOptions(context.Background(), daemon, daemon, noColor); err != nil {
 				fmt.Fprintf(os.Stderr, "tui: %v\n", err)
 				os.Exit(cli.ExitRejected)
 			}
 			return
 		}
-		if err := tui.Run(control.Snapshot{}, err); err != nil {
+		if err := tui.RunWithOptions(control.Snapshot{}, err, noColor); err != nil {
 			fmt.Fprintf(os.Stderr, "tui: %v\n", err)
 			os.Exit(cli.ExitRejected)
 		}
@@ -44,9 +45,9 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func tuiInvocation(args []string) (string, time.Duration, bool) {
+func tuiInvocation(args []string) (string, time.Duration, bool, bool) {
 	if !term.IsTerminal(os.Stdin.Fd()) || !term.IsTerminal(os.Stdout.Fd()) {
-		return "", 0, false
+		return "", 0, false, false
 	}
 	flags := flag.NewFlagSet("hiddify-tui", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -54,10 +55,11 @@ func tuiInvocation(args []string) (string, time.Duration, bool) {
 	timeout := flags.Duration("timeout", 3*time.Second, "daemon request timeout")
 	jsonOutput := flags.Bool("json", false, "print JSON")
 	showVersion := flags.Bool("version", false, "print version")
+	noColor := flags.Bool("no-color", false, "disable terminal colors")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *jsonOutput || *showVersion {
-		return "", 0, false
+		return "", 0, false, false
 	}
-	return *socket, *timeout, true
+	return *socket, *timeout, *noColor, true
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
@@ -67,6 +69,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	socket := flags.String("socket", client.DefaultSocket(), "local control socket")
 	timeout := flags.Duration("timeout", 3*time.Second, "daemon request timeout")
 	showVersion := flags.Bool("version", false, "print version")
+	_ = flags.Bool("no-color", false, "disable terminal colors")
 	if err := flags.Parse(args); err != nil {
 		return cli.ExitUsage
 	}
