@@ -489,7 +489,7 @@ func (m Dashboard) addProfileCmd(source, name, content string) tea.Cmd {
 	name = strings.TrimSpace(name)
 	return func() tea.Msg {
 		if m.ctx == nil {
-			return actionResult{action: "add profile", err: errors.New("hiddify daemon is unavailable; start it with: sudo hiddify-core daemon run")}
+			return actionResult{action: "add profile", err: errors.New("hiddify daemon is unavailable; run 'make install' once, then it runs as a service")}
 		}
 		var err error
 		switch source {

@@ -24,12 +24,31 @@ if [ -z "$DESIGNATED_USER" ]; then
     exit 1
 fi
 
-for binary in hiddify-core hiddify-agent hiddify-tui; do
+for binary in hiddify-agent hiddify-tui; do
     if [ ! -f "$SRCDIR/$binary" ]; then
-        echo "install: missing $binary in $SRCDIR" >&2
+        echo "install: missing $binary in $SRCDIR (build it with 'make build')" >&2
         exit 1
     fi
 done
+
+# hiddify-core is built by the companion core repository, not this one, so it
+# is located rather than required. Look in the build dir, then the controlling
+# user's ~/.local/bin, then PATH.
+CORE_BIN=""
+USER_HOME="$(getent passwd "$DESIGNATED_USER" | cut -d: -f6)"
+for candidate in \
+    "$SRCDIR/hiddify-core" \
+    "$USER_HOME/.local/bin/hiddify-core" \
+    "$(command -v hiddify-core 2>/dev/null)"; do
+    if [ -n "$candidate" ] && [ -f "$candidate" ]; then
+        CORE_BIN="$candidate"
+        break
+    fi
+done
+if [ -z "$CORE_BIN" ]; then
+    echo "install: could not locate hiddify-core; place it in $SRCDIR or $USER_HOME/.local/bin" >&2
+    exit 1
+fi
 
 LIBDIR=/usr/lib/hiddify
 BINDIR=/usr/local/bin
@@ -41,7 +60,7 @@ DESIGNATED_UID="$(id -u "$DESIGNATED_USER")"
 
 echo "installing binaries"
 install -d -m0755 "$LIBDIR" "$ETCDIR" "$UNITDIR" "$USER_UNITDIR"
-install -m0755 "$SRCDIR/hiddify-core" "$LIBDIR/hiddify-core"
+install -m0755 "$CORE_BIN" "$LIBDIR/hiddify-core"
 install -m0755 "$SRCDIR/hiddify-agent" "$LIBDIR/hiddify-agent"
 install -m0755 "$SRCDIR/hiddify-tui" "$BINDIR/hiddify-tui"
 if [ -f "$SRCDIR/hiddify-migrate" ]; then
