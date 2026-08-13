@@ -62,3 +62,7 @@ CGO_ENABLED=1 go build -trimpath -ldflags="-w -s" \
 The tag list is sourced from the `hiddify-core` Makefile (`TAGS` variable) and
 must stay in sync with it. Verify a build supports the expected protocols by
 importing a Reality, Hysteria2, TUIC, and WireGuard link before shipping.
+
+The complete build-and-publish runbook — submodule pins, `go.mod` replace
+fixes, the recovered daemon-adapter source reference, and verification — is in
+[`daemon-build.md`](daemon-build.md).
