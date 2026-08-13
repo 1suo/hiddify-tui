@@ -13,11 +13,11 @@ import (
 	"github.com/1suo/hiddify-tui/internal/client"
 )
 
-// bootstrapConfig is a minimal config the core can start and serve from: a
+// BootstrapConfig is a minimal config the core can start and serve from: a
 // "direct" outbound (required by the core's DNS detour) plus a non-predefined
 // outbound (required by the selector builder). The TUI switches to the real
 // profile via Connect afterward.
-const bootstrapConfig = `{"outbounds":[{"type":"direct","tag":"direct"},{"type":"vless","tag":"bootstrap","server":"127.0.0.1","server_port":1,"uuid":"00000000-0000-0000-0000-000000000000"}]}`
+const BootstrapConfig = `{"outbounds":[{"type":"direct","tag":"direct"},{"type":"vless","tag":"bootstrap","server":"127.0.0.1","server_port":1,"uuid":"00000000-0000-0000-0000-000000000000"}]}`
 
 // Launcher owns a headless core process when the client needs to start one.
 type Launcher struct {
@@ -35,33 +35,41 @@ func NewLauncher(binary string) *Launcher {
 	return &Launcher{binary: binary}
 }
 
-// Ensure returns a client for a running core, launching one headless if none is
-// reachable. The bool reports whether this call launched the core.
-func (l *Launcher) Ensure(ctx context.Context, address string, timeout time.Duration) (*client.GRPCClient, bool, error) {
-	if core, err := dial(ctx, address, 500*time.Millisecond); err == nil {
-		return core, false, nil
-	}
+// Available reports whether a core binary was found.
+func (l *Launcher) Available() bool { return l.binary != "" }
+
+// Spawned reports whether this launcher started the core.
+func (l *Launcher) Spawned() bool { return l.cmd != nil && l.cmd.Process != nil }
+
+// Start launches the core headless and returns a client once it is reachable.
+func (l *Launcher) Start(ctx context.Context, address, configContent string, timeout time.Duration) (*client.GRPCClient, error) {
 	if l.binary == "" {
-		return nil, false, fmt.Errorf("core not reachable and hiddify-core binary not found")
+		return nil, fmt.Errorf("hiddify-core binary not found")
+	}
+	if configContent == "" {
+		configContent = BootstrapConfig
 	}
 	configPath := filepath.Join(os.TempDir(), "hiddify-tui-bootstrap.json")
-	if err := os.WriteFile(configPath, []byte(bootstrapConfig), 0o600); err != nil {
-		return nil, false, err
+	if err := os.WriteFile(configPath, []byte(configContent), 0o600); err != nil {
+		return nil, err
 	}
 	l.cmd = exec.Command(l.binary, "run", "-c", configPath)
 	l.cmd.Stdout = os.Stderr
 	l.cmd.Stderr = os.Stderr
 	if err := l.cmd.Start(); err != nil {
-		return nil, false, fmt.Errorf("launch core: %w", err)
+		return nil, fmt.Errorf("launch core: %w", err)
 	}
 	deadline := time.Now().Add(timeout)
+	var lastErr error
 	for time.Now().Before(deadline) {
 		if core, err := dial(ctx, address, 500*time.Millisecond); err == nil {
-			return core, true, nil
+			return core, nil
+		} else {
+			lastErr = err
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	return nil, true, fmt.Errorf("core did not become reachable")
+	return nil, fmt.Errorf("core did not become reachable: %w", lastErr)
 }
 
 // Stop terminates the launched core, if any.
@@ -71,6 +79,11 @@ func (l *Launcher) Stop() {
 		_ = l.cmd.Wait()
 		l.cmd = nil
 	}
+}
+
+// Dial returns a client for an already-running core.
+func Dial(ctx context.Context, address string, timeout time.Duration) (*client.GRPCClient, error) {
+	return dial(ctx, address, timeout)
 }
 
 func dial(ctx context.Context, address string, timeout time.Duration) (*client.GRPCClient, error) {

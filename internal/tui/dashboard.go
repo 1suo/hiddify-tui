@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/1suo/hiddify-tui/internal/client"
+	"github.com/1suo/hiddify-tui/internal/core"
 	"github.com/1suo/hiddify-tui/internal/profile"
 )
 
@@ -28,10 +29,14 @@ const (
 // Dashboard is the terminal screen. It is a client of the running core and the
 // client-side profile store; quitting it never disconnects the core.
 type Dashboard struct {
-	core  client.Client
-	store *profile.Store
-	err   error
-	ctx   context.Context
+	core     client.Client
+	store    *profile.Store
+	launcher *core.Launcher
+	address  string
+	timeout  time.Duration
+	err      error
+	ctx      context.Context
+	spawned  bool
 
 	snapshot client.Snapshot
 	groups   []client.OutboundGroup
@@ -49,7 +54,8 @@ type Dashboard struct {
 	adding            bool
 	input             string
 
-	updates chan update
+	updates      chan update
+	streamCancel context.CancelFunc
 }
 
 type update struct {
@@ -64,13 +70,28 @@ type actionResult struct {
 	err    error
 }
 
+// coreStarted carries the result of starting the core from the TUI.
+type coreStarted struct {
+	core    client.Client
+	spawned bool
+	err     error
+}
+
+type coreStopped struct{}
+
 const maxLogLines = 500
 
 func NewDashboard(core client.Client, store *profile.Store, err error) Dashboard {
 	return Dashboard{core: core, store: store, err: err, profiles: store.List()}
 }
 
-func (m Dashboard) Init() tea.Cmd { return waitForStream(m.updates) }
+func (m Dashboard) Init() tea.Cmd {
+	cmd := waitForStream(m.updates)
+	if m.core == nil && m.store.AutoStart {
+		return tea.Batch(cmd, m.startCore())
+	}
+	return cmd
+}
 
 func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -118,6 +139,16 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.disconnect()
 		case "r":
 			return m, m.restart()
+		case "s":
+			if m.core == nil {
+				return m, m.startCore()
+			}
+		case "S":
+			if m.spawned {
+				return m, m.stopCore()
+			}
+		case "A":
+			return m, m.toggleAutoStart()
 		}
 		m.confirmDisconnect = false
 	case tea.PasteMsg:
@@ -149,8 +180,69 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.action = msg.action + " requested"
 		}
+	case coreStarted:
+		if msg.err != nil {
+			m.action = "start core: " + simplifyError(msg.err)
+			return m, nil
+		}
+		m.core = msg.core
+		m.spawned = msg.spawned
+		m.err = nil
+		m.action = "core started"
+		return m, m.restartStream()
+	case coreStopped:
+		m.stopStream()
+		m.core = nil
+		m.spawned = false
+		m.snapshot = client.Snapshot{}
+		m.groups = nil
+		m.logs = nil
+		m.action = "core stopped"
 	}
 	return m, nil
+}
+
+func (m Dashboard) restartStream() tea.Cmd {
+	m.stopStream()
+	streamCtx, cancel := context.WithCancel(m.ctx)
+	m.streamCancel = cancel
+	m.updates = streamUpdates(streamCtx, m.core)
+	return waitForStream(m.updates)
+}
+
+func (m *Dashboard) stopStream() {
+	if m.streamCancel != nil {
+		m.streamCancel()
+		m.streamCancel = nil
+	}
+	m.updates = nil
+}
+
+func (m Dashboard) startCore() tea.Cmd {
+	return func() tea.Msg {
+		coreClient, err := m.launcher.Start(m.ctx, m.address, core.BootstrapConfig, m.timeout)
+		if err != nil {
+			return coreStarted{err: err}
+		}
+		if active, ok := m.store.Active(); ok {
+			_ = coreClient.Connect(m.ctx, active.Content, active.Name)
+		}
+		return coreStarted{core: coreClient, spawned: true}
+	}
+}
+
+func (m Dashboard) stopCore() tea.Cmd {
+	return func() tea.Msg {
+		m.launcher.Stop()
+		return coreStopped{}
+	}
+}
+
+func (m Dashboard) toggleAutoStart() tea.Cmd {
+	return func() tea.Msg {
+		err := m.store.ToggleAutoStart()
+		return actionResult{action: "auto-start", err: err}
+	}
 }
 
 func (m Dashboard) inputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -332,14 +424,21 @@ func looksLikeURL(value string) bool {
 }
 
 // Run opens the alternate-screen dashboard.
-func Run(core client.Client, store *profile.Store, err error) error {
-	return RunWithOptions(core, store, err, false)
+func Run(core client.Client, store *profile.Store, launcher *core.Launcher, address string, timeout time.Duration) error {
+	return RunWithOptions(core, store, launcher, address, timeout, false)
 }
 
-func RunWithOptions(core client.Client, store *profile.Store, err error, noColor bool) error {
-	model := NewDashboard(core, store, err)
+func RunWithOptions(core client.Client, store *profile.Store, launcher *core.Launcher, address string, timeout time.Duration, noColor bool) error {
+	model := NewDashboard(core, store, nil)
 	model.ctx = context.Background()
-	model.updates = streamUpdates(model.ctx, core)
+	model.launcher = launcher
+	model.address = address
+	model.timeout = timeout
+	if core != nil {
+		streamCtx, cancel := context.WithCancel(model.ctx)
+		model.streamCancel = cancel
+		model.updates = streamUpdates(streamCtx, core)
+	}
 	options := []tea.ProgramOption{}
 	if noColor {
 		options = append(options, tea.WithColorProfile(colorprofile.ASCII))
@@ -484,10 +583,11 @@ func (m Dashboard) View() tea.View {
 
 func (m Dashboard) render() string {
 	if m.core == nil {
+		hint := "core stopped | s start core"
 		if m.err != nil {
-			return "hiddify core unavailable\n" + m.err.Error()
+			return hint + "\n" + simplifyError(m.err)
 		}
-		return "hiddify core unavailable"
+		return hint
 	}
 
 	width, height := m.width, m.height
@@ -638,7 +738,7 @@ func (m Dashboard) footerLine() string {
 		}
 		return "add profile > " + display + "  |  ctrl+d confirm"
 	}
-	return "tab pane | j/k move | enter select | c/x/r conn | a add | d del | q quit"
+	return "s core | S stop | A autostart | tab pane | j/k move | enter select | c/x/r conn | a add | d del | q quit"
 }
 
 func formatBytes(value int64) string {

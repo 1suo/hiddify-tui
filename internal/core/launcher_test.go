@@ -28,15 +28,15 @@ func TestLauncherSpawnsAndStops(t *testing.T) {
 
 	launcher := NewLauncher(binary)
 	ctx := context.Background()
-	core, spawned, err := launcher.Ensure(ctx, "127.0.0.1:1", 1*time.Second)
+	core, err := launcher.Start(ctx, "127.0.0.1:1", "", 1*time.Second)
 	if err == nil {
 		t.Fatal("expected dial to fail against a fake that serves no gRPC")
 	}
-	if !spawned {
-		t.Fatal("Ensure should report that it spawned the core")
-	}
 	if core != nil {
-		t.Fatal("Ensure should return a nil client when dial fails")
+		t.Fatal("Start should return a nil client when dial fails")
+	}
+	if !launcher.Spawned() {
+		t.Fatal("Start should spawn the core")
 	}
 	if _, err := os.Stat(started); err != nil {
 		t.Fatalf("fake core was not spawned: %v", err)

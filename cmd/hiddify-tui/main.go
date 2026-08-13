@@ -30,24 +30,18 @@ func main() {
 			os.Exit(cli.ExitRejected)
 		}
 		launcher := core.NewLauncher(coreBinary)
-		coreClient, spawned, ensureErr := launcher.Ensure(context.Background(), address, timeout)
-		defer func() {
-			if spawned {
-				launcher.Stop()
-			}
-		}()
+		// Attach to an already-running core only; never auto-start here.
 		var coreIface client.Client
-		if coreClient != nil {
-			coreIface = coreClient
+		if dialed, dialErr := core.Dial(context.Background(), address, 500*time.Millisecond); dialErr == nil {
+			coreIface = dialed
+			defer dialed.Close()
 		}
-		if spawned && coreClient != nil {
-			if active, ok := store.Active(); ok {
-				_ = coreClient.Connect(context.Background(), active.Content, active.Name)
-			}
-		}
-		if err := tui.RunWithOptions(coreIface, store, ensureErr, noColor); err != nil {
+		if err := tui.RunWithOptions(coreIface, store, launcher, address, timeout, noColor); err != nil {
 			fmt.Fprintf(os.Stderr, "tui: %v\n", err)
 			os.Exit(cli.ExitRejected)
+		}
+		if launcher.Spawned() {
+			launcher.Stop()
 		}
 		return
 	}

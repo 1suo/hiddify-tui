@@ -47,11 +47,12 @@ type Profile struct {
 }
 
 // Store is the on-disk profile list. ActiveID selects which profile the client
-// connects.
+// connects. AutoStart opts into starting the core and connecting on TUI launch.
 type Store struct {
-	Path     string    `json:"-"`
-	ActiveID string    `json:"active_id"`
-	Profiles []Profile `json:"profiles"`
+	Path      string    `json:"-"`
+	ActiveID  string    `json:"active_id"`
+	AutoStart bool      `json:"auto_start,omitempty"`
+	Profiles  []Profile `json:"profiles"`
 }
 
 // DefaultPath returns the user profile store path under XDG data directories.
@@ -180,6 +181,12 @@ func (s *Store) Update(profile Profile) error {
 		}
 	}
 	return fmt.Errorf("profile %q not found", profile.ID)
+}
+
+// ToggleAutoStart flips the auto-start preference and persists it.
+func (s *Store) ToggleAutoStart() error {
+	s.AutoStart = !s.AutoStart
+	return s.Save()
 }
 
 func newID() string {
