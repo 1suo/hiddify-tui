@@ -649,12 +649,12 @@ func (m Dashboard) render() string {
 }
 
 func (m Dashboard) statusLine() string {
-	auto := "off"
+	autostart := "off"
 	if m.store.AutoStart {
-		auto = "on"
+		autostart = "on"
 	}
 	if m.core == nil {
-		line := "core off | auto " + auto
+		line := "core off | autostart " + autostart
 		if !m.launcherAvailable() {
 			return "core not installed | install hiddify-core then run hiddify-tui again"
 		}
@@ -671,7 +671,7 @@ func (m Dashboard) statusLine() string {
 	if state == "" {
 		state = "stopped"
 	}
-	line := "core on | auto " + auto
+	line := "core on | autostart " + autostart
 	if state == "started" {
 		profile := m.snapshot.CurrentProfile
 		if profile == "" {
@@ -774,20 +774,7 @@ func (m Dashboard) footerLine() string {
 		}
 		return "add profile > " + display + "  |  ctrl+d confirm"
 	}
-	auto := "off"
-	if m.store.AutoStart {
-		auto = "on"
-	}
-	conn := "off"
-	if m.core != nil && m.snapshot.State == client.StateStarted {
-		conn = "on"
-	}
-	coreState := "off"
-	if m.core != nil {
-		coreState = "on"
-	}
-	return fmt.Sprintf("[s] core %s | [S] stop | [A] auto:%s | [c/x/r] conn:%s | [tab] pane | [j/k] move | [enter] select | [a] add | [d] del | [q] quit",
-		coreState, auto, conn)
+	return "[s] start core | [S] stop core | [A] autostart | [c] connect | [x] disconnect | [r] restart | [tab] pane | [j/k] move | [enter] select | [a] add | [d] del | [q] quit"
 }
 
 func formatBytes(value int64) string {

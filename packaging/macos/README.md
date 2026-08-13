@@ -1,14 +1,21 @@
 # macOS packaging
 
-`hiddify-tui` is a client of a running `hiddify-core`. The packaged LaunchDaemon
-runs the core headless (`run -c <config>`); the TUI connects to it at
-`127.0.0.1:17078`.
+`hiddify-tui` is a client of the Hiddify core. On macOS the core ships inside
+the Hiddify GUI (it serves Core gRPC at `127.0.0.1:17078`); there is no
+standalone macOS core in the official releases, so the TUI normally attaches to
+the GUI's core.
 
-```text
-/Library/Application Support/Hiddify/hiddify-core   # core binary
-/usr/local/bin/hiddify-tui                           # thin client
-/Library/LaunchDaemons/com.github.hiddify.core.plist # headless core service
+`install.sh` installs the client to `/usr/local/bin`. If a standalone
+`hiddify-core` is placed in the build dir, it also installs a root `LaunchDaemon`
+to run it.
+
+```sh
+sudo packaging/macos/install.sh /path/to/build-dir
 ```
 
-The core must be built with the protocol tags; see
-[`docs/core-compatibility.md`](../../docs/core-compatibility.md).
+Build the darwin binaries first (from Linux or macOS):
+
+```sh
+GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o dist/hiddify-tui ./cmd/hiddify-tui
+GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o dist/hiddify-migrate ./cmd/hiddify-migrate
+```

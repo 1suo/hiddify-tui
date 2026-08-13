@@ -103,6 +103,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runProfile(remaining, store, *jsonOutput, stdout, stderr)
 	case "migrate":
 		return runGUIMigration(remaining, store, stdout, stderr)
+	case "install-core":
+		return runInstallCore(stdout, stderr)
 	}
 
 	core, err := cli.Dial(*address, *timeout)
@@ -333,6 +335,23 @@ func runGUIMigration(args []string, store *profile.Store, stdout, stderr io.Writ
 	if err := json.NewEncoder(stdout).Encode(result); err != nil {
 		return cli.ExitRejected
 	}
+	return cli.ExitOK
+}
+
+func runInstallCore(stdout, stderr io.Writer) int {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(stderr, "install-core: %v\n", err)
+		return cli.ExitRejected
+	}
+	dest := filepath.Join(home, ".local", "bin")
+	fmt.Fprintf(stderr, "downloading hiddify-core %s to %s ...\n", core.DefaultCoreVersion, dest)
+	binary, err := core.Download(dest, core.DefaultCoreVersion)
+	if err != nil {
+		fmt.Fprintf(stderr, "install-core: %v\n", err)
+		return cli.ExitRejected
+	}
+	fmt.Fprintf(stdout, "installed %s\n", binary)
 	return cli.ExitOK
 }
 

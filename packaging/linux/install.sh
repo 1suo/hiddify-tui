@@ -37,21 +37,32 @@ for candidate in \
         break
     fi
 done
-if [ -z "$CORE_BIN" ]; then
-    echo "install: hiddify-core not found. Install it first:" >&2
-    echo "  - from the Hiddify CLI release, or" >&2
-    echo "  - build it (see github.com/hiddify/hiddify-core), or" >&2
-    echo "  - pass it via: sudo $0 $SRCDIR (place hiddify-core in $SRCDIR)" >&2
-    exit 1
-fi
 
 LIBDIR=/usr/lib/hiddify
 BINDIR=/usr/local/bin
 UNITDIR=/etc/systemd/system
+CORE_VERSION="${HIDDIFY_CORE_VERSION:-v4.1.0}"
+
+if [ -z "$CORE_BIN" ]; then
+    case "$(uname -m)" in
+        x86_64|amd64) CORE_ARCH=amd64 ;;
+        aarch64|arm64) CORE_ARCH=arm64 ;;
+        *) echo "install: unsupported architecture $(uname -m)" >&2; exit 1 ;;
+    esac
+    CORE_URL="https://github.com/hiddify/hiddify-core/releases/download/${CORE_VERSION}/hiddify-core-linux-${CORE_ARCH}.tar.gz"
+    echo "installing hiddify-core ${CORE_VERSION} (${CORE_ARCH}) as a dependency"
+    tmpdir="$(mktemp -d)"
+    trap 'rm -rf "$tmpdir"' EXIT
+    curl -fsSL "$CORE_URL" -o "$tmpdir/core.tar.gz" || { echo "install: download failed: $CORE_URL" >&2; exit 1; }
+    tar xzf "$tmpdir/core.tar.gz" -C "$tmpdir"
+    install -m0755 "$tmpdir"/hiddify-core-*/hiddify-core "$LIBDIR/hiddify-core"
+    install -m0755 "$tmpdir"/hiddify-core-*/libcronet.so "$LIBDIR/libcronet.so"
+    CORE_BIN="$LIBDIR/hiddify-core"
+fi
 
 echo "installing binaries"
 install -d -m0755 "$LIBDIR" "$UNITDIR"
-[ -n "$CORE_BIN" ] && install -m0755 "$CORE_BIN" "$LIBDIR/hiddify-core"
+[ -n "$CORE_BIN" ] && [ ! "$CORE_BIN" = "$LIBDIR/hiddify-core" ] && install -m0755 "$CORE_BIN" "$LIBDIR/hiddify-core"
 install -m0755 "$SRCDIR/hiddify-tui" "$BINDIR/hiddify-tui"
 [ -f "$SRCDIR/hiddify-migrate" ] && install -m0755 "$SRCDIR/hiddify-migrate" "$BINDIR/hiddify-migrate"
 
