@@ -25,7 +25,7 @@ func TestDashboardRendersPanes(t *testing.T) {
 	model := newTestDashboard()
 	model.width, model.height = 100, 30
 	view := model.render()
-	for _, want := range []string{"profiles", "outbounds", "logs", "Home", "q quit"} {
+	for _, want := range []string{"profiles", "outbounds", "logs", "Home", "c connect"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view does not contain %q:\n%s", want, view)
 		}

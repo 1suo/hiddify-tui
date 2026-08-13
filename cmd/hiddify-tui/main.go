@@ -23,16 +23,18 @@ var version = "0.1.0-dev"
 
 func main() {
 	if address, timeout, noColor, ok := tuiInvocation(os.Args[1:]); ok {
-		core, err := cli.Dial(address, timeout)
-		if err == nil {
-			defer core.Close()
+		var core client.Client
+		dialed, dialErr := cli.Dial(address, timeout)
+		if dialErr == nil {
+			core = dialed
+			defer dialed.Close()
 		}
 		store, storeErr := profile.Open(profile.DefaultPath())
 		if storeErr != nil {
 			fmt.Fprintf(os.Stderr, "profiles: %v\n", storeErr)
 			os.Exit(cli.ExitRejected)
 		}
-		if err := tui.RunWithOptions(core, store, err, noColor); err != nil {
+		if err := tui.RunWithOptions(core, store, dialErr, noColor); err != nil {
 			fmt.Fprintf(os.Stderr, "tui: %v\n", err)
 			os.Exit(cli.ExitRejected)
 		}

@@ -378,23 +378,53 @@ var (
 	idleBorder   = lipgloss.Color("8")
 )
 
-func bordered(title string, width, height int, focused bool, content string) string {
+// renderPane draws a fixed-size bordered pane. Each body line is truncated to
+// the inner width and the cursor line is highlighted; the pane is always
+// exactly width x height.
+func renderPane(title string, width, height int, focused bool, lines []string, cursor int) string {
 	color := idleBorder
 	if focused {
 		color = activeBorder
 	}
+	innerWidth := width - 2
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
+	innerHeight := height - 2
+	if innerHeight < 1 {
+		innerHeight = 1
+	}
+	body := make([]string, 0, innerHeight)
+	body = append(body, truncate(title, innerWidth))
+	for i, line := range lines {
+		if len(body) >= innerHeight {
+			break
+		}
+		line = truncate(line, innerWidth)
+		if i == cursor && focused {
+			line = lipgloss.NewStyle().Reverse(true).Render(line)
+		}
+		body = append(body, line)
+	}
+	for len(body) < innerHeight {
+		body = append(body, "")
+	}
 	style := lipgloss.NewStyle().
 		Width(width).
-		Height(height).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(color).
-		Padding(0, 1)
-	body := strings.TrimRight(content, "\n")
-	lines := strings.Split(body, "\n")
-	if len(lines) > height-1 {
-		lines = lines[:height-1]
+		BorderForeground(color)
+	return style.Render(strings.Join(body, "\n"))
+}
+
+func truncate(value string, width int) string {
+	runes := []rune(value)
+	if len(runes) <= width {
+		return value
 	}
-	return style.Render(title + "\n" + strings.Join(lines, "\n"))
+	if width <= 1 {
+		return string(runes[:width])
+	}
+	return string(runes[:width-1]) + "…"
 }
 
 func (m Dashboard) View() tea.View {
@@ -405,40 +435,56 @@ func (m Dashboard) View() tea.View {
 
 func (m Dashboard) render() string {
 	if m.core == nil {
-		content := "hiddify core unavailable\n" + m.err.Error()
-		if m.err == nil {
-			content = "hiddify core unavailable"
+		if m.err != nil {
+			return "hiddify core unavailable\n" + m.err.Error()
 		}
-		return content
+		return "hiddify core unavailable"
 	}
 
-	width := m.width
-	height := m.height
-	if width < 40 {
+	width, height := m.width, m.height
+	if width < 60 {
 		width = 80
 	}
-	if height < 10 {
+	if height < 12 {
 		height = 24
 	}
 
-	status := m.statusBar(width)
+	status := truncate(m.statusLine(), width)
+	footer := truncate(m.footerLine(), width)
 
-	logsHeight := height * 2 / 5
-	topHeight := height - logsHeight - 3
+	paneHeight := height - 2
+	logsHeight := paneHeight * 2 / 5
+	if logsHeight < 4 {
+		logsHeight = 4
+	}
+	topHeight := paneHeight - logsHeight
+	if topHeight < 4 {
+		topHeight = 4
+		logsHeight = paneHeight - topHeight
+	}
+
 	profilesWidth := width * 2 / 5
+	if profilesWidth < 24 {
+		profilesWidth = 24
+	}
+	if profilesWidth > width-24 {
+		profilesWidth = width - 24
+	}
 	outboundsWidth := width - profilesWidth - 1
 
-	profilesPane := bordered("profiles", profilesWidth, topHeight, m.pane == paneProfiles, m.profilesView())
-	outboundsPane := bordered("outbounds", outboundsWidth, topHeight, m.pane == paneOutbounds, m.outboundsView())
-	logsPane := bordered("logs", width, logsHeight, m.pane == paneLogs, m.logsView())
+	profileLines, profileCursor := m.profileLines()
+	outboundLines, outboundCursor := m.outboundLines()
+	logLines := m.logLines()
+
+	profilesPane := renderPane("profiles", profilesWidth, topHeight, m.pane == paneProfiles, profileLines, profileCursor)
+	outboundsPane := renderPane("outbounds", outboundsWidth, topHeight, m.pane == paneOutbounds, outboundLines, outboundCursor)
+	logsPane := renderPane("logs", width, logsHeight, m.pane == paneLogs, logLines, -1)
 
 	top := lipgloss.JoinHorizontal(lipgloss.Top, profilesPane, outboundsPane)
-
-	footer := m.footer(width)
-	return status + "\n" + top + "\n" + logsPane + "\n" + footer
+	return lipgloss.JoinVertical(lipgloss.Left, status, top, logsPane, footer)
 }
 
-func (m Dashboard) statusBar(width int) string {
+func (m Dashboard) statusLine() string {
 	state := string(m.snapshot.State)
 	if state == "" {
 		state = "stopped"
@@ -452,46 +498,34 @@ func (m Dashboard) statusBar(width int) string {
 	if m.action != "" {
 		line += "  ·  " + m.action
 	}
-	style := lipgloss.NewStyle().Width(width).Padding(0, 1).Bold(true)
-	return style.Render(line)
+	return line
 }
 
-func (m Dashboard) profilesView() string {
+func (m Dashboard) profileLines() ([]string, int) {
 	if len(m.profiles) == 0 {
-		return "no profiles\n\npress a to add (paste a URL or config)"
+		return []string{"no profiles", "", "press a to add (paste a URL or config)"}, -1
 	}
-	var builder strings.Builder
-	for index, profile := range m.profiles {
-		marker := "  "
-		if index == m.profileCursor && m.pane == paneProfiles {
-			marker = "> "
-		}
+	lines := make([]string, 0, len(m.profiles))
+	for _, profile := range m.profiles {
 		active := " "
 		if profile.Active {
 			active = "*"
 		}
-		line := fmt.Sprintf("%s%s %s", marker, active, profile.Name)
-		if index == m.profileCursor && m.pane == paneProfiles {
-			line = lipgloss.NewStyle().Reverse(true).Render(line)
-		}
-		builder.WriteString(line + "\n")
+		lines = append(lines, fmt.Sprintf("%s %s", active, profile.Name))
 	}
-	return strings.TrimRight(builder.String(), "\n")
+	return lines, m.profileCursor
 }
 
-func (m Dashboard) outboundsView() string {
+func (m Dashboard) outboundLines() ([]string, int) {
 	if len(m.groups) == 0 {
-		return "no outbounds"
+		return []string{"no outbounds"}, -1
 	}
-	var builder strings.Builder
+	lines := make([]string, 0)
+	cursor := -1
 	index := 0
 	for _, group := range m.groups {
-		builder.WriteString(group.Tag + " [" + group.Type + "]\n")
+		lines = append(lines, group.Tag+" ["+group.Type+"]")
 		for _, item := range group.Items {
-			marker := "  "
-			if index == m.outboundCursor && m.pane == paneOutbounds {
-				marker = "> "
-			}
 			selected := " "
 			if item.Selected {
 				selected = "*"
@@ -500,41 +534,36 @@ func (m Dashboard) outboundsView() string {
 			if item.DelayMillis > 0 {
 				delay = fmt.Sprintf("%dms", item.DelayMillis)
 			}
-			line := fmt.Sprintf("%s%s %s  %s  %s", marker, selected, item.Tag, item.Type, delay)
-			if index == m.outboundCursor && m.pane == paneOutbounds {
-				line = lipgloss.NewStyle().Reverse(true).Render(line)
+			if index == m.outboundCursor {
+				cursor = len(lines)
 			}
-			builder.WriteString(line + "\n")
+			lines = append(lines, fmt.Sprintf("%s %s  %s  %s", selected, item.Tag, item.Type, delay))
 			index++
 		}
 	}
-	return strings.TrimRight(builder.String(), "\n")
+	return lines, cursor
 }
 
-func (m Dashboard) logsView() string {
+func (m Dashboard) logLines() []string {
 	if len(m.logs) == 0 {
-		return "no log entries"
+		return []string{"no log entries"}
 	}
 	start := len(m.logs) - m.height/2
 	if start < 0 {
 		start = 0
 	}
-	var builder strings.Builder
+	lines := make([]string, 0, len(m.logs)-start)
 	for _, entry := range m.logs[start:] {
-		builder.WriteString(fmt.Sprintf("%s %-5s %-10s %s\n", entry.Time.Format("15:04:05"), entry.Level, entry.Component, entry.Message))
+		lines = append(lines, fmt.Sprintf("%s %-5s %-10s %s", entry.Time.Format("15:04:05"), entry.Level, entry.Component, entry.Message))
 	}
-	return strings.TrimRight(builder.String(), "\n")
+	return lines
 }
 
-func (m Dashboard) footer(width int) string {
-	line := "c connect  x disconnect  r restart  tab pane  ↑/↓ move  enter select  a add  d delete  t test  q quit"
+func (m Dashboard) footerLine() string {
 	if m.adding {
-		line = "add profile: paste URL or config, enter to confirm, esc to cancel"
+		return "add profile: paste URL or config, enter to confirm, esc to cancel"
 	}
-	if m.width > 0 && len(line) > width {
-		line = "c/x/r conn  tab pane  ↑↓ move  enter select  a add  d del  t test  q quit"
-	}
-	return line
+	return "c connect  x disconnect  r restart  tab pane  ↑/↓ move  enter select  a add  d delete  t test  q quit"
 }
 
 func formatBytes(value int64) string {
