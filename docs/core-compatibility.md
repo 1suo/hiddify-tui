@@ -44,3 +44,21 @@ that exact compatible core revision before claiming general availability.
    published core artifact.
 3. Run the full compatibility matrix against the published minimum and current
    core versions before a beta release.
+
+## Required build tags
+
+The companion `hiddify-core` daemon must be built with the same protocol tag
+set as the GUI core, or profiles that import fine in the GUI fail validation.
+A daemon built without these tags rejects Reality (missing `with_utls`),
+Hysteria2/TUIC (missing `with_quic`), and WireGuard (missing
+`with_wireguard`):
+
+```sh
+CGO_ENABLED=1 go build -trimpath -ldflags="-w -s" \
+  -tags "with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api,with_grpc,with_awg,tfogo_checklinkname0,with_naive_outbound,with_conntrack" \
+  -o hiddify-core ./cmd/main
+```
+
+The tag list is sourced from the `hiddify-core` Makefile (`TAGS` variable) and
+must stay in sync with it. Verify a build supports the expected protocols by
+importing a Reality, Hysteria2, TUIC, and WireGuard link before shipping.
