@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -19,8 +18,8 @@ import (
 
 func main() {
 	flags := flag.NewFlagSet("hiddify-agent", flag.ExitOnError)
-	socket := flags.String("socket", "/run/hiddify/control.sock", "daemon control socket")
-	recoveryFile := flags.String("recovery-file", defaultRecoveryFile(), "proxy recovery state")
+	socket := flags.String("socket", client.DefaultSocket(), "daemon control socket")
+	recoveryFile := flags.String("recovery-file", agent.DefaultRecoveryPath(), "proxy recovery state")
 	restore := flags.Bool("restore", false, "restore saved system proxy state and exit")
 	checkInterval := flags.Duration("check-interval", 30*time.Second, "expired lease check interval")
 	flags.Parse(os.Args[1:])
@@ -29,7 +28,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	manager := agent.NewManager(agent.NewGSettingsBackend(), *recoveryFile)
+	manager := agent.NewManager(agent.NewPlatformBackend(), *recoveryFile)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if *restore {
@@ -72,7 +71,7 @@ func main() {
 			lastError = "invalid daemon proxy instruction"
 			return
 		}
-		if err := manager.Apply(requestCtx, agent.DesiredGSettingsProxy(instruction.Host, instruction.Port), time.Duration(instruction.LeaseSeconds)*time.Second); err != nil {
+		if err := manager.Apply(requestCtx, agent.DesiredProxy(instruction.Host, instruction.Port), time.Duration(instruction.LeaseSeconds)*time.Second); err != nil {
 			lastError = err.Error()
 			return
 		}
@@ -96,15 +95,4 @@ func main() {
 			sync()
 		}
 	}
-}
-
-func defaultRecoveryFile() string {
-	if stateHome := os.Getenv("XDG_STATE_HOME"); stateHome != "" {
-		return filepath.Join(stateHome, "hiddify", "proxy-recovery.json")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "proxy-recovery.json"
-	}
-	return filepath.Join(home, ".local", "state", "hiddify", "proxy-recovery.json")
 }
