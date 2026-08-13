@@ -42,7 +42,7 @@ func TestAutoConnectAndServiceStatus(t *testing.T) {
 func TestAgentStatus(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	reader := &serviceReader{}
-	if code := cli.AgentStatus(context.Background(), reader, true, &stdout, &stderr); code != cli.ExitOK || stdout.String() != "{\"schema_version\":1,\"agent\":{\"required\":false,\"connected\":false}}\n" {
+	if code := cli.AgentStatus(context.Background(), reader, true, &stdout, &stderr); code != cli.ExitOK || stdout.String() != "{\"schema_version\":1,\"agent\":{\"required\":false,\"connected\":false,\"applied\":false}}\n" {
 		t.Fatalf("status code=%d stdout=%q", code, stdout.String())
 	}
 }
