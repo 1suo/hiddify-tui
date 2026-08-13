@@ -592,7 +592,11 @@ func (m Dashboard) logLines() []string {
 
 func (m Dashboard) footerLine() string {
 	if m.adding {
-		return "add profile: paste URL or config, enter to confirm, esc to cancel"
+		display := strings.ReplaceAll(m.input, "\n", " ")
+		if display == "" {
+			return "add profile › paste URL or config, enter to confirm, esc to cancel"
+		}
+		return "add profile › " + display
 	}
 	return "tab pane · ↑↓ move · enter select · c/x/r conn · a add · d del · q quit"
 }
