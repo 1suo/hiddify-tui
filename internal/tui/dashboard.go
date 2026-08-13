@@ -54,6 +54,10 @@ type Dashboard struct {
 	adding            bool
 	input             string
 
+	pending      string
+	pendingUntil time.Time
+	spinner      int
+
 	updates      chan update
 	streamCancel context.CancelFunc
 }
@@ -63,6 +67,7 @@ type update struct {
 	groups   []client.OutboundGroup
 	logs     []client.LogEntry
 	err      error
+	tick     bool
 }
 
 type actionResult struct {
@@ -80,6 +85,16 @@ type coreStarted struct {
 type coreStopped struct{}
 
 const maxLogLines = 500
+
+const spinnerFrames = "|/-\\"
+
+const spinnerInterval = 150 * time.Millisecond
+
+const pendingTimeout = 5 * time.Second
+
+const requestTimeout = 10 * time.Second
+
+var pulseFrames = [...]string{".", "o", "O", "o"}
 
 func NewDashboard(core client.Client, store *profile.Store, err error) Dashboard {
 	return Dashboard{core: core, store: store, err: err, profiles: store.List()}
@@ -128,22 +143,25 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.deleteProfile()
 			}
 		case "c":
-			return m, m.connect()
-		case "x":
-			if !m.confirmDisconnect {
-				m.confirmDisconnect = true
-				m.action = "press x again to disconnect"
-				return m, nil
+			if m.snapshot.State == client.StateStarted {
+				if !m.confirmDisconnect {
+					m.confirmDisconnect = true
+					m.action = "press c again to disconnect"
+					return m, nil
+				}
+				m.confirmDisconnect = false
+				m.request("disconnect")
+				return m, m.disconnect()
 			}
-			m.confirmDisconnect = false
-			return m, m.disconnect()
+			m.request("connect")
+			return m, m.connect()
 		case "r":
+			m.request("restart")
 			return m, m.restart()
 		case "s":
 			if m.core == nil {
 				return m, m.startCore()
 			}
-		case "S":
 			if m.spawned {
 				return m, m.stopCore()
 			}
@@ -158,11 +176,19 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case update:
+		if msg.tick {
+			m.spinner++
+			if m.pending != "" && time.Now().After(m.pendingUntil) {
+				m.pending = ""
+			}
+			return m, waitForStream(m.updates)
+		}
 		if msg.err != nil {
 			m.err = msg.err
 			m.stopStream()
 			m.core = nil
 			m.spawned = false
+			m.pending = ""
 			m.snapshot = client.Snapshot{}
 			m.groups = nil
 			m.logs = nil
@@ -171,6 +197,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.snapshot != nil {
 			m.snapshot = *msg.snapshot
 			m.action = ""
+			m.clearPending(msg.snapshot.State)
 		}
 		if msg.groups != nil {
 			m.groups = msg.groups
@@ -183,7 +210,12 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, waitForStream(m.updates)
 	case actionResult:
-		if msg.err != nil {
+		if isConnectionAction(msg.action) {
+			m.pending = ""
+			if msg.err != nil {
+				m.action = msg.action + ": " + simplifyError(msg.err)
+			}
+		} else if msg.err != nil {
 			m.action = msg.action + ": " + simplifyError(msg.err)
 		} else {
 			m.action = msg.action
@@ -202,6 +234,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stopStream()
 		m.core = nil
 		m.spawned = false
+		m.pending = ""
 		m.snapshot = client.Snapshot{}
 		m.groups = nil
 		m.logs = nil
@@ -300,11 +333,15 @@ func (m Dashboard) addProfile(content string) tea.Cmd {
 				err = fetchErr
 			}
 		} else {
-			if parseErr := m.core.Parse(m.ctx, content); parseErr == nil {
-				m.store.Add(profile.Profile{Name: profile.DefaultName(content), Kind: profile.KindLocal, Content: content}, false)
-				err = m.store.Save()
+			if m.core != nil {
+				if parseErr := m.core.Parse(m.ctx, content); parseErr == nil {
+					m.store.Add(profile.Profile{Name: profile.DefaultName(content), Kind: profile.KindLocal, Content: content}, false)
+					err = m.store.Save()
+				} else {
+					err = parseErr
+				}
 			} else {
-				err = parseErr
+				err = errors.New("core is not running (press s) to validate the profile")
 			}
 		}
 		m.profiles = m.store.List()
@@ -370,26 +407,75 @@ func (m Dashboard) deleteProfile() tea.Cmd {
 }
 
 func (m Dashboard) connect() tea.Cmd {
+	if m.core == nil {
+		return func() tea.Msg { return actionResult{action: "connect", err: errors.New("core is not running (press s)")} }
+	}
 	target, ok := m.store.Active()
 	if !ok {
 		return func() tea.Msg { return actionResult{action: "connect", err: errors.New("no active profile")} }
 	}
 	return func() tea.Msg {
-		return actionResult{action: "connect", err: m.core.Connect(m.ctx, target.Content, target.Name)}
+		ctx, cancel := context.WithTimeout(m.ctx, requestTimeout)
+		defer cancel()
+		return actionResult{action: "connect", err: m.core.Connect(ctx, target.Content, target.Name)}
 	}
 }
 
 func (m Dashboard) disconnect() tea.Cmd {
-	return func() tea.Msg { return actionResult{action: "disconnect", err: m.core.Disconnect(m.ctx)} }
+	if m.core == nil {
+		return func() tea.Msg { return actionResult{action: "disconnect", err: errors.New("core is not running")} }
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(m.ctx, requestTimeout)
+		defer cancel()
+		return actionResult{action: "disconnect", err: m.core.Disconnect(ctx)}
+	}
 }
 
 func (m Dashboard) restart() tea.Cmd {
+	if m.core == nil {
+		return func() tea.Msg { return actionResult{action: "restart", err: errors.New("core is not running (press s)")} }
+	}
 	target, ok := m.store.Active()
 	if !ok {
 		return func() tea.Msg { return actionResult{action: "restart", err: errors.New("no active profile")} }
 	}
 	return func() tea.Msg {
-		return actionResult{action: "restart", err: m.core.Restart(m.ctx, target.Content, target.Name)}
+		ctx, cancel := context.WithTimeout(m.ctx, requestTimeout)
+		defer cancel()
+		return actionResult{action: "restart", err: m.core.Restart(ctx, target.Content, target.Name)}
+	}
+}
+
+// request marks a connection action as in-flight until the core acknowledges it,
+// a result arrives, or the pending timeout expires.
+func (m *Dashboard) request(action string) {
+	m.pending = action
+	m.pendingUntil = time.Now().Add(pendingTimeout)
+}
+
+// isConnectionAction reports whether an action result is already reflected in
+// the connection state display, so it should not be echoed into m.action.
+func isConnectionAction(action string) bool {
+	return action == "connect" || action == "disconnect" || action == "restart"
+}
+
+// clearPending drops the "requested" marker once the core has acknowledged the
+// action by moving to a matching state.
+func (m *Dashboard) clearPending(state client.ConnectionState) {
+	switch m.pending {
+	case "connect":
+		if state == client.StateStarting || state == client.StateStarted {
+			m.pending = ""
+		}
+	case "disconnect":
+		if state == client.StateStopping || state == client.StateStopped {
+			m.pending = ""
+		}
+	case "restart":
+		if state == client.StateStarting || state == client.StateStarted {
+			m.pending = ""
+		}
 	}
 }
 
@@ -480,6 +566,8 @@ func streamUpdates(ctx context.Context, core client.Client) chan update {
 		}
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
+		spinnerTicker := time.NewTicker(spinnerInterval)
+		defer spinnerTicker.Stop()
 		for {
 			select {
 			case snapshot, ok := <-statusCh:
@@ -496,6 +584,8 @@ func streamUpdates(ctx context.Context, core client.Client) chan update {
 				if groups, err := core.OutboundGroups(ctx); err == nil {
 					updates <- update{groups: groups}
 				}
+			case <-spinnerTicker.C:
+				updates <- update{tick: true}
 			case <-ctx.Done():
 				return
 			}
@@ -594,15 +684,8 @@ func (m Dashboard) View() tea.View {
 }
 
 func (m Dashboard) render() string {
-	if m.core == nil {
-		if !m.launcherAvailable() {
-			return core.InstallHint + "\n\nrun `sudo packaging/linux/install.sh`, or set --core-binary"
-		}
-		hint := "core off | [s] start core"
-		if m.err != nil {
-			return hint + "\n" + simplifyError(m.err)
-		}
-		return hint
+	if m.core == nil && !m.launcherAvailable() {
+		return core.InstallHint + "\n\nrun `sudo packaging/linux/install.sh`, or set --core-binary"
 	}
 
 	width, height := m.width, m.height
@@ -649,42 +732,30 @@ func (m Dashboard) render() string {
 }
 
 func (m Dashboard) statusLine() string {
-	autostart := "off"
-	if m.store.AutoStart {
-		autostart = "on"
-	}
 	if m.core == nil {
-		line := "core off | autostart " + autostart
-		if !m.launcherAvailable() {
-			return "core not installed | install hiddify-core then run hiddify-tui again"
-		}
+		line := "[c] " + m.connView()
 		if m.err != nil {
 			line += " | " + simplifyError(m.err)
 		}
 		if m.action != "" {
 			line += " | " + m.action
 		}
-		return line + " | [s] start core"
+		return line
 	}
 
 	state := string(m.snapshot.State)
 	if state == "" {
 		state = "stopped"
 	}
-	line := "core on | autostart " + autostart
+	line := "[c] " + m.connView()
 	if state == "started" {
 		profile := m.snapshot.CurrentProfile
 		if profile == "" {
 			profile = "none"
 		}
-		line += " | conn on (" + profile + ")"
+		line += " (" + profile + ")"
 		line += " | down " + formatBytes(m.snapshot.Downlink) + " up " + formatBytes(m.snapshot.Uplink)
 		line += " | outbound " + valueOr(m.snapshot.CurrentOutbound, "none")
-	} else {
-		line += " | conn off (" + state + ")"
-		if m.snapshot.Message != "" {
-			line += " | " + m.snapshot.Message
-		}
 	}
 	if m.err != nil {
 		line += " | " + simplifyError(m.err)
@@ -693,6 +764,35 @@ func (m Dashboard) statusLine() string {
 		line += " | " + m.action
 	}
 	return line
+}
+
+// connView renders the connection state, animating in-flight and connected
+// states with an ASCII spinner or pulse.
+func (m Dashboard) connView() string {
+	spinner := string(spinnerFrames[m.spinner%len(spinnerFrames)])
+	switch m.pending {
+	case "connect":
+		return spinner + " requested: connect"
+	case "disconnect":
+		return spinner + " requested: disconnect"
+	case "restart":
+		return spinner + " requested: restart"
+	}
+	switch m.snapshot.State {
+	case client.StateStarting:
+		return spinner + " connecting"
+	case client.StateStopping:
+		return spinner + " disconnecting"
+	case client.StateStarted:
+		return pulseFrames[m.spinner%len(pulseFrames)] + " connected"
+	case client.StateStopped:
+		if m.snapshot.Message != "" {
+			return "! failed (" + m.snapshot.Message + ")"
+		}
+		return "- disconnected"
+	default:
+		return "- disconnected"
+	}
 }
 
 // simplifyError strips gRPC transport boilerplate so the status line stays
@@ -774,7 +874,15 @@ func (m Dashboard) footerLine() string {
 		}
 		return "add profile > " + display + "  |  ctrl+d confirm"
 	}
-	return "[s] start core | [S] stop core | [A] autostart | [c] connect | [x] disconnect | [r] restart | [tab] pane | [j/k] move | [enter] select | [a] add | [d] del | [q] quit"
+	coreState := "off"
+	if m.core != nil {
+		coreState = "on"
+	}
+	autostart := "off"
+	if m.store.AutoStart {
+		autostart = "on"
+	}
+	return "[s] core " + coreState + " | [A] autostart " + autostart + " | [r] restart | [tab] pane | [j/k] move | [enter] select | [a] add | [d] del | [q] quit"
 }
 
 func formatBytes(value int64) string {

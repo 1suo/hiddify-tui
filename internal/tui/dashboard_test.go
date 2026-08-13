@@ -32,7 +32,7 @@ func TestDashboardRendersPanes(t *testing.T) {
 	model := newTestDashboard()
 	model.width, model.height = 100, 30
 	view := model.render()
-	for _, want := range []string{"profiles", "outbounds", "logs", "Home", "[c] connect"} {
+	for _, want := range []string{"profiles", "outbounds", "logs", "Home", "[c] ", "[s] core on"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view does not contain %q:\n%s", want, view)
 		}
@@ -78,14 +78,15 @@ func TestDashboardActivatesProfile(t *testing.T) {
 
 func TestDashboardDisconnectRequiresConfirmation(t *testing.T) {
 	model := newTestDashboard()
+	model.snapshot = client.Snapshot{State: client.StateStarted}
 	core := model.core.(*client.FakeClient)
-	updated, command := model.Update(tea.KeyPressMsg(tea.Key{Text: "x"}))
+	updated, command := model.Update(tea.KeyPressMsg(tea.Key{Text: "c"}))
 	if command != nil || core.Disconnects != 0 {
-		t.Fatal("first x must only request confirmation")
+		t.Fatal("first c must only request confirmation")
 	}
-	_, command = updated.(Dashboard).Update(tea.KeyPressMsg(tea.Key{Text: "x"}))
+	_, command = updated.(Dashboard).Update(tea.KeyPressMsg(tea.Key{Text: "c"}))
 	if command == nil {
-		t.Fatal("second x must disconnect")
+		t.Fatal("second c must disconnect")
 	}
 	if result := command().(actionResult); result.err != nil {
 		t.Fatalf("disconnect result = %v", result.err)
@@ -140,6 +141,34 @@ func TestDashboardAddInputTreatsEnterAsNewline(t *testing.T) {
 	}
 }
 
+func TestConnectionPendingClearsOnResult(t *testing.T) {
+	model := newTestDashboard()
+	updated, command := model.Update(tea.KeyPressMsg(tea.Key{Text: "c"}))
+	if command == nil {
+		t.Fatal("c must issue a connect command")
+	}
+	if updated.(Dashboard).pending != "connect" {
+		t.Fatal("pending should be set to connect after pressing c")
+	}
+	result := command().(actionResult)
+	settled, _ := updated.(Dashboard).Update(result)
+	if settled.(Dashboard).pending != "" {
+		t.Fatalf("pending = %q, want cleared once the connect result arrives", settled.(Dashboard).pending)
+	}
+}
+
+func TestConnectWithoutCoreIsSafe(t *testing.T) {
+	model := newTestDashboard()
+	model.core = nil
+	_, command := model.Update(tea.KeyPressMsg(tea.Key{Text: "c"}))
+	if command == nil {
+		t.Fatal("c without a core must return a command, not panic")
+	}
+	if result := command().(actionResult); result.err == nil {
+		t.Fatal("connect without a core should report an error")
+	}
+}
+
 func TestSimplifyError(t *testing.T) {
 	cases := map[string]string{
 		"rpc error: code = Unavailable desc = connection error: desc = transport: connection refused": "transport: connection refused",
@@ -158,7 +187,7 @@ func TestDashboardStatusUnavailable(t *testing.T) {
 	model.core = nil
 	model.err = errors.New("rpc error: code = Unavailable desc = connection error: desc = refused")
 	view := model.render()
-	if !strings.Contains(view, "core off") || strings.Contains(view, "rpc error") {
+	if !strings.Contains(view, "disconnected") || !strings.Contains(view, "[s] core off") || strings.Contains(view, "rpc error") {
 		t.Fatalf("unavailable status:\n%s", view)
 	}
 }
