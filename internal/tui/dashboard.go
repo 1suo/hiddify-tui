@@ -485,7 +485,12 @@ func (m Dashboard) submitAdd() (tea.Model, tea.Cmd) {
 }
 
 func (m Dashboard) addProfileCmd(source, name, content string) tea.Cmd {
+	content = strings.TrimSpace(content)
+	name = strings.TrimSpace(name)
 	return func() tea.Msg {
+		if m.ctx == nil {
+			return actionResult{action: "add profile", err: errors.New("hiddify daemon is unavailable; start it with: sudo hiddify-core daemon run")}
+		}
 		var err error
 		switch source {
 		case "paste":
