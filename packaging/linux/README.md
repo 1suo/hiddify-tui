@@ -15,6 +15,20 @@ The companion core branch implements this command. These remain development
 assets until matching core artifacts are published for every supported Linux
 architecture; a package must ship the exact compatible core build.
 
+## Installer
+
+`install.sh` performs the one-time installation that turns the daemon into an
+always-running systemd service. After running it once, no manual daemon command
+is needed: the service starts at boot and `hiddify-tui` connects to it directly.
+
+```sh
+# Build the binaries into a directory, then install as a service.
+sudo packaging/linux/install.sh /path/to/built-binaries
+```
+
+The controlling desktop user is taken from `SUDO_USER`. `uninstall.sh` removes
+the services and binaries and, with `--purge`, the profile state.
+
 ## Installer requirements
 
 A Linux package must:
