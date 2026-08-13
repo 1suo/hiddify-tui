@@ -25,14 +25,32 @@ type Launcher struct {
 	cmd    *exec.Cmd
 }
 
-// NewLauncher resolves the core binary, falling back to PATH lookup.
+// NewLauncher resolves the core binary, falling back to PATH and common
+// install locations.
 func NewLauncher(binary string) *Launcher {
 	if binary == "" {
-		if path, err := exec.LookPath("hiddify-core"); err == nil {
-			binary = path
-		}
+		binary = findBinary()
 	}
 	return &Launcher{binary: binary}
+}
+
+// InstallHint is the guidance shown when no core binary can be found.
+const InstallHint = "install hiddify-core: github.com/hiddify/hiddify-core"
+
+func findBinary() string {
+	if path, err := exec.LookPath("hiddify-core"); err == nil {
+		return path
+	}
+	for _, candidate := range []string{
+		"/usr/lib/hiddify/hiddify-core",
+		"/usr/local/lib/hiddify/hiddify-core",
+		"/usr/local/bin/hiddify-core",
+	} {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
 }
 
 // Available reports whether a core binary was found.

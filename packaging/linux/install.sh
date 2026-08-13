@@ -25,12 +25,25 @@ done
 
 CORE_BIN=""
 USER_HOME="$(getent passwd "${DESIGNATED_USER:-root}" | cut -d: -f6)"
-for candidate in "$SRCDIR/hiddify-core" "$USER_HOME/.local/bin/hiddify-core" "$(command -v hiddify-core 2>/dev/null)"; do
+for candidate in \
+    "$SRCDIR/hiddify-core" \
+    "$USER_HOME/.local/bin/hiddify-core" \
+    "/usr/lib/hiddify/hiddify-core" \
+    "/usr/local/lib/hiddify/hiddify-core" \
+    "/usr/local/bin/hiddify-core" \
+    "$(command -v hiddify-core 2>/dev/null)"; do
     if [ -n "$candidate" ] && [ -f "$candidate" ]; then
         CORE_BIN="$candidate"
         break
     fi
 done
+if [ -z "$CORE_BIN" ]; then
+    echo "install: hiddify-core not found. Install it first:" >&2
+    echo "  - from the Hiddify CLI release, or" >&2
+    echo "  - build it (see github.com/hiddify/hiddify-core), or" >&2
+    echo "  - pass it via: sudo $0 $SRCDIR (place hiddify-core in $SRCDIR)" >&2
+    exit 1
+fi
 
 LIBDIR=/usr/lib/hiddify
 BINDIR=/usr/local/bin

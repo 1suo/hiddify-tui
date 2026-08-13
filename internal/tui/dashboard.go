@@ -158,8 +158,15 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case update:
-		if msg.err != nil && m.err == nil {
+		if msg.err != nil {
 			m.err = msg.err
+			m.stopStream()
+			m.core = nil
+			m.spawned = false
+			m.snapshot = client.Snapshot{}
+			m.groups = nil
+			m.logs = nil
+			return m, nil
 		}
 		if msg.snapshot != nil {
 			m.snapshot = *msg.snapshot
@@ -565,6 +572,10 @@ func runeCount(value string) int {
 	return len([]rune(value))
 }
 
+func (m Dashboard) launcherAvailable() bool {
+	return m.launcher != nil && m.launcher.Available()
+}
+
 func truncate(value string, width int) string {
 	runes := []rune(value)
 	if len(runes) <= width {
@@ -584,7 +595,10 @@ func (m Dashboard) View() tea.View {
 
 func (m Dashboard) render() string {
 	if m.core == nil {
-		hint := "core stopped | s start core"
+		if !m.launcherAvailable() {
+			return core.InstallHint + "\n\nrun `sudo packaging/linux/install.sh`, or set --core-binary"
+		}
+		hint := "core off | [s] start core"
 		if m.err != nil {
 			return hint + "\n" + simplifyError(m.err)
 		}
@@ -635,31 +649,48 @@ func (m Dashboard) render() string {
 }
 
 func (m Dashboard) statusLine() string {
-	if m.err != nil {
-		return "core unavailable | " + simplifyError(m.err)
+	auto := "off"
+	if m.store.AutoStart {
+		auto = "on"
 	}
-	state := string(m.snapshot.State)
-	if state == "" {
-		state = "stopped"
-	}
-	if state != "started" {
-		line := "state " + state
-		if m.snapshot.Message != "" {
-			line += " | " + m.snapshot.Message
+	if m.core == nil {
+		line := "core off | auto " + auto
+		if !m.launcherAvailable() {
+			return "core not installed | install hiddify-core then run hiddify-tui again"
+		}
+		if m.err != nil {
+			line += " | " + simplifyError(m.err)
 		}
 		if m.action != "" {
 			line += " | " + m.action
 		}
-		return line
+		return line + " | [s] start core"
 	}
-	profile := m.snapshot.CurrentProfile
-	if profile == "" {
-		profile = "none"
+
+	state := string(m.snapshot.State)
+	if state == "" {
+		state = "stopped"
 	}
-	line := fmt.Sprintf("state %s  running %s  down %s  up %s  outbound %s",
-		state, profile, formatBytes(m.snapshot.Downlink), formatBytes(m.snapshot.Uplink), valueOr(m.snapshot.CurrentOutbound, "none"))
+	line := "core on | auto " + auto
+	if state == "started" {
+		profile := m.snapshot.CurrentProfile
+		if profile == "" {
+			profile = "none"
+		}
+		line += " | conn on (" + profile + ")"
+		line += " | down " + formatBytes(m.snapshot.Downlink) + " up " + formatBytes(m.snapshot.Uplink)
+		line += " | outbound " + valueOr(m.snapshot.CurrentOutbound, "none")
+	} else {
+		line += " | conn off (" + state + ")"
+		if m.snapshot.Message != "" {
+			line += " | " + m.snapshot.Message
+		}
+	}
+	if m.err != nil {
+		line += " | " + simplifyError(m.err)
+	}
 	if m.action != "" {
-		line += "  |  " + m.action
+		line += " | " + m.action
 	}
 	return line
 }
@@ -743,7 +774,20 @@ func (m Dashboard) footerLine() string {
 		}
 		return "add profile > " + display + "  |  ctrl+d confirm"
 	}
-	return "s core | S stop | A autostart | tab pane | j/k move | enter select | c/x/r conn | a add | d del | q quit"
+	auto := "off"
+	if m.store.AutoStart {
+		auto = "on"
+	}
+	conn := "off"
+	if m.core != nil && m.snapshot.State == client.StateStarted {
+		conn = "on"
+	}
+	coreState := "off"
+	if m.core != nil {
+		coreState = "on"
+	}
+	return fmt.Sprintf("[s] core %s | [S] stop | [A] auto:%s | [c/x/r] conn:%s | [tab] pane | [j/k] move | [enter] select | [a] add | [d] del | [q] quit",
+		coreState, auto, conn)
 }
 
 func formatBytes(value int64) string {

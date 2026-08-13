@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/1suo/hiddify-tui/internal/client"
+	corepkg "github.com/1suo/hiddify-tui/internal/core"
 	"github.com/1suo/hiddify-tui/internal/profile"
 )
 
@@ -23,6 +24,7 @@ func newTestDashboard() Dashboard {
 	core := &client.FakeClient{}
 	model := NewDashboard(core, store, nil)
 	model.ctx = context.Background()
+	model.launcher = corepkg.NewLauncher("/bin/true")
 	return model
 }
 
@@ -30,7 +32,7 @@ func TestDashboardRendersPanes(t *testing.T) {
 	model := newTestDashboard()
 	model.width, model.height = 100, 30
 	view := model.render()
-	for _, want := range []string{"profiles", "outbounds", "logs", "Home", "c/x/r conn"} {
+	for _, want := range []string{"profiles", "outbounds", "logs", "Home", "[c/x/r] conn"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view does not contain %q:\n%s", want, view)
 		}
@@ -153,9 +155,10 @@ func TestSimplifyError(t *testing.T) {
 
 func TestDashboardStatusUnavailable(t *testing.T) {
 	model := newTestDashboard()
+	model.core = nil
 	model.err = errors.New("rpc error: code = Unavailable desc = connection error: desc = refused")
 	view := model.render()
-	if !strings.Contains(view, "core unavailable") || strings.Contains(view, "rpc error") {
+	if !strings.Contains(view, "core off") || strings.Contains(view, "rpc error") {
 		t.Fatalf("unavailable status:\n%s", view)
 	}
 }
