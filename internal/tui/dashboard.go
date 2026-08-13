@@ -84,6 +84,12 @@ type coreStarted struct {
 
 type coreStopped struct{}
 
+// clipboardMsg carries a read from the system clipboard into add-profile mode.
+type clipboardMsg struct {
+	content string
+	replace bool
+}
+
 const maxLogLines = 500
 
 const spinnerFrames = "|/-\\"
@@ -137,6 +143,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pane == paneProfiles {
 				m.adding = true
 				m.input = ""
+				return m, m.readClipboardCmd(false)
 			}
 		case "d":
 			if m.pane == paneProfiles {
@@ -173,6 +180,12 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.PasteMsg:
 		if m.adding {
 			m.input += msg.Content
+		}
+	case clipboardMsg:
+		if m.adding {
+			if msg.replace || m.input == "" {
+				m.input = msg.content
+			}
 		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -298,9 +311,11 @@ func (m Dashboard) inputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.adding = false
 		m.input = ""
 	case "enter":
-		m.input += "\n"
+		return m.submitAdd()
 	case "ctrl+d":
 		return m.submitAdd()
+	case "ctrl+v":
+		return m, m.readClipboardCmd(true)
 	case "backspace":
 		runes := []rune(m.input)
 		if len(runes) > 0 {
@@ -312,6 +327,14 @@ func (m Dashboard) inputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// readClipboardCmd reads the system clipboard asynchronously. replace forces
+// the result over the current input; otherwise it only fills an empty input.
+func (m Dashboard) readClipboardCmd(replace bool) tea.Cmd {
+	return func() tea.Msg {
+		return clipboardMsg{content: readClipboard(), replace: replace}
+	}
 }
 
 func (m Dashboard) submitAdd() (tea.Model, tea.Cmd) {
@@ -959,9 +982,9 @@ func (m Dashboard) footerLine() string {
 	if m.adding {
 		display := strings.ReplaceAll(m.input, "\n", " ")
 		if display == "" {
-			return "add profile > paste URL or config | enter newline | ctrl+d confirm | esc cancel"
+			return "add profile > paste | ctrl+v clipboard | enter confirm | esc cancel"
 		}
-		return "add profile > " + display + "  |  ctrl+d confirm"
+		return "add profile > " + display + "  |  enter confirm"
 	}
 	corePart := "[s] core off"
 	if m.core != nil {

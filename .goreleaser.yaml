@@ -1,0 +1,76 @@
+version: 2
+
+project_name: hiddify-tui
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: hiddify-tui
+    main: ./cmd/hiddify-tui
+    binary: hiddify-tui
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  - id: hiddify-migrate
+    main: ./cmd/hiddify-migrate
+    binary: hiddify-migrate
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+nfpms:
+  - id: packages
+    package_name: hiddify-tui
+    file_name_template: >-
+      {{ .ConventionalFileName }}
+    vendor: 1suo
+    homepage: https://github.com/1suo/hiddify-tui
+    maintainer: 1suo <isuo1991@outlook.com>
+    description: Terminal client for hiddify-core
+    formats:
+      - deb
+      - rpm
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'

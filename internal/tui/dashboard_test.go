@@ -140,31 +140,35 @@ func TestProgramQuitsOnQ(t *testing.T) {
 	}
 }
 
-func TestDashboardAddInputTreatsEnterAsNewline(t *testing.T) {
+func TestDashboardAddEnterSubmits(t *testing.T) {
 	model := newTestDashboard()
 	model.adding = true
-	model.input = "line1"
+	model.input = `{"outbounds":[{"tag":"x"}]}`
 
 	updated, cmd := model.Update(tea.KeyPressMsg(tea.Key{Text: "enter"}))
-	if cmd != nil {
-		t.Fatal("enter must insert a newline, not submit")
-	}
-	m := updated.(Dashboard)
-	if m.adding != true || m.input != "line1\n" {
-		t.Fatalf("input after enter = %q, adding=%t", m.input, m.adding)
-	}
-
-	// ctrl+d submits
-	updated, cmd = m.Update(tea.KeyPressMsg(tea.Key{Code: 'd', Mod: tea.ModCtrl}))
 	if cmd == nil {
-		t.Fatal("ctrl+d must submit")
+		t.Fatal("enter must submit the pasted input")
 	}
 	if updated.(Dashboard).adding {
 		t.Fatal("submit should leave add mode")
 	}
 	if result := cmd().(actionResult); result.err != nil {
-		// "line1" is not a valid config; addProfile reports the parse error.
-		t.Logf("submit result (expected error for invalid config): %v", result.err)
+		t.Fatalf("submit result = %v", result.err)
+	}
+}
+
+func TestDashboardPasteFromClipboard(t *testing.T) {
+	model := newTestDashboard()
+	model.adding = true
+
+	settled, _ := model.Update(clipboardMsg{content: "  https://sub.example.com/\n", replace: true})
+	if settled.(Dashboard).input != "  https://sub.example.com/\n" {
+		t.Fatalf("clipboard paste = %q", settled.(Dashboard).input)
+	}
+	// Auto-fill must not overwrite non-empty input.
+	settled, _ = settled.(Dashboard).Update(clipboardMsg{content: "other", replace: false})
+	if settled.(Dashboard).input == "other" {
+		t.Fatal("non-replace paste must not overwrite existing input")
 	}
 }
 
