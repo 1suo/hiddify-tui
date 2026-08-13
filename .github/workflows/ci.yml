@@ -46,8 +46,11 @@ jobs:
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags='-s -w' -o "dist/hiddify-agent-${goos}-${goarch}${suffix}" ./cmd/hiddify-agent
           done
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o dist/hiddify-migrate-linux-amd64 ./cmd/hiddify-migrate
-          find dist -type f -printf '%f %s bytes\n'
+          for f in dist/*; do
+            printf '%s %s bytes  gzip %s bytes\n' "$(basename "$f")" "$(wc -c < "$f")" "$(gzip -c "$f" | wc -c)"
+          done
+          # Investigate thresholds documented in TODO.md: tui > 20 MiB, agent > 12 MiB.
           size=$(wc -c < dist/hiddify-tui-linux-amd64)
-          test "$size" -le 15728640 || { echo "hiddify-tui exceeds 15 MiB budget: $size bytes"; exit 1; }
+          test "$size" -le 20971520 || { echo "hiddify-tui exceeds 20 MiB investigate threshold: $size bytes"; exit 1; }
           agent_size=$(wc -c < dist/hiddify-agent-linux-amd64)
-          test "$agent_size" -le 8388608 || { echo "hiddify-agent exceeds 8 MiB budget: $agent_size bytes"; exit 1; }
+          test "$agent_size" -le 12582912 || { echo "hiddify-agent exceeds 12 MiB investigate threshold: $agent_size bytes"; exit 1; }

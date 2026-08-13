@@ -13,11 +13,16 @@ This repository currently contains the first client-side foundation:
 - an alternate-screen Bubble Tea v2 dashboard, opened by running
   `hiddify-tui` from a terminal, with explicit connect/disconnect/restart
   controls;
-- a standalone `hiddify-agent` that restores GNOME system-proxy settings after
-  an expired lease or clean session shutdown;
+- a standalone `hiddify-agent` that restores the logged-in user's system proxy
+  settings after an expired lease or clean session shutdown, with platform
+  backends for GNOME (Linux), System Configuration via `networksetup` (macOS),
+  and the Internet Settings registry (Windows);
 - `hiddify-tui migrate gui`, which produces a read-only migration plan for the
   current Hiddify GUI SQLite profile database and its `configs/` directory;
-  the legacy `hiddify-migrate` wrapper remains available.
+  the legacy `hiddify-migrate` wrapper remains available;
+- native service assets for Linux (systemd), macOS (launchd), and Windows
+  (service + scheduled task) under `packaging/`, and a release script that
+  produces checksums and SBOMs (`scripts/release.sh`).
 
 The client connects to `/run/hiddify/control.sock` on Linux and
 `/var/run/hiddify/control.sock` on macOS. The companion core branch implements
@@ -49,4 +54,5 @@ Applying requires the compatible daemon control endpoint. The source database
 and config files remain read-only in both modes.
 
 The complete delivery plan and cross-repository dependencies are in
-[`TODO.md`](TODO.md).
+[`TODO.md`](TODO.md). Operational guidance (install, connect, recovery, and
+uninstall) is in [`docs/operations.md`](docs/operations.md).

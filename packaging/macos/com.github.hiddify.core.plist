@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.github.hiddify.core</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Library/Application Support/Hiddify/hiddify-core</string>
+        <string>daemon</string>
+        <string>run</string>
+        <string>--state-dir=/Library/Application Support/Hiddify</string>
+        <string>--socket=/var/run/hiddify/control.sock</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>2</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/hiddify-core.log</string>
+    <key>Umask</key>
+    <integer>63</integer>
+</dict>
+</plist>
