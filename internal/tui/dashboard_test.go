@@ -141,7 +141,7 @@ func TestDashboardAddInputTreatsEnterAsNewline(t *testing.T) {
 	}
 }
 
-func TestConnectionPendingClearsOnResult(t *testing.T) {
+func TestConnectionPendingClearsOnState(t *testing.T) {
 	model := newTestDashboard()
 	updated, command := model.Update(tea.KeyPressMsg(tea.Key{Text: "c"}))
 	if command == nil {
@@ -152,8 +152,13 @@ func TestConnectionPendingClearsOnResult(t *testing.T) {
 	}
 	result := command().(actionResult)
 	settled, _ := updated.(Dashboard).Update(result)
-	if settled.(Dashboard).pending != "" {
-		t.Fatalf("pending = %q, want cleared once the connect result arrives", settled.(Dashboard).pending)
+	if settled.(Dashboard).pending != "connect" {
+		t.Fatalf("pending = %q, want kept until the core confirms the state", settled.(Dashboard).pending)
+	}
+	snapshot := client.Snapshot{State: client.StateStarted}
+	confirmed, _ := settled.(Dashboard).Update(update{snapshot: &snapshot})
+	if confirmed.(Dashboard).pending != "" {
+		t.Fatalf("pending = %q, want cleared once the started state arrives", confirmed.(Dashboard).pending)
 	}
 }
 
@@ -189,6 +194,23 @@ func TestDashboardStatusUnavailable(t *testing.T) {
 	view := model.render()
 	if !strings.Contains(view, "disconnected") || !strings.Contains(view, "[s] core off") || strings.Contains(view, "rpc error") {
 		t.Fatalf("unavailable status:\n%s", view)
+	}
+}
+
+func TestDashboardCollapsesOnSmallScreen(t *testing.T) {
+	model := newTestDashboard()
+	model.pane = paneProfiles
+	model.profiles = []profile.Profile{{ID: "a", Name: "A", Kind: profile.KindLocal}}
+	model.width, model.height = 40, 10
+	view := ansi.ReplaceAllString(model.render(), "")
+	lines := strings.Split(view, "\n")
+	if len(lines) > 10 {
+		t.Fatalf("small screen produced %d lines:\n%s", len(lines), view)
+	}
+	for _, want := range []string{"profiles [1]", "outbounds [2]", "logs [3]"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("collapsed layout missing %q:\n%s", want, view)
+		}
 	}
 }
 

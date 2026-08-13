@@ -90,7 +90,7 @@ const spinnerFrames = "|/-\\"
 
 const spinnerInterval = 150 * time.Millisecond
 
-const pendingTimeout = 5 * time.Second
+const pendingTimeout = 15 * time.Second
 
 const requestTimeout = 10 * time.Second
 
@@ -211,10 +211,12 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitForStream(m.updates)
 	case actionResult:
 		if isConnectionAction(msg.action) {
-			m.pending = ""
 			if msg.err != nil {
+				m.pending = ""
 				m.action = msg.action + ": " + simplifyError(msg.err)
 			}
+			// On success keep the pending marker until the core's state stream
+			// confirms the new state, so the UI does not flash a stale state.
 		} else if msg.err != nil {
 			m.action = msg.action + ": " + simplifyError(msg.err)
 		} else {
@@ -612,6 +614,53 @@ var (
 	idleBorder   = lipgloss.Color("8")
 )
 
+// Layout thresholds. Below these the layout switches from a comfortable
+// three-pane grid to a stacked, collapsed view where only the focused pane is
+// expanded.
+const (
+	comfortableWidth = 72
+	comfortableArea  = 12 // pane rows (height - status/footer) for the grid
+	minimumWidth     = 40
+	minimumHeight    = 10
+)
+
+// paneTitle returns the inscribed border title for a pane, carrying its
+// selection number and the keys local to that pane so each panel is
+// self-describing.
+func (m Dashboard) paneTitle(p pane) string {
+	switch p {
+	case paneProfiles:
+		return "profiles [1] enter:use a:add d:del"
+	case paneOutbounds:
+		return "outbounds [2] enter:use t:test"
+	default:
+		return "logs [3]"
+	}
+}
+
+// paneBar renders a single-line collapsed pane: only the inscribed top border.
+func paneBar(title string, width int, focused bool) string {
+	border := lipgloss.NewStyle().Foreground(idleBorder)
+	if focused {
+		border = lipgloss.NewStyle().Foreground(activeBorder)
+	}
+	innerWidth := width - 2
+	if innerWidth < 1 {
+		innerWidth = 1
+	}
+	return border.Render(paneTopLine(title, innerWidth))
+}
+
+// paneTopLine builds the top border line with the title inscribed.
+func paneTopLine(title string, innerWidth int) string {
+	titleText := truncate(" "+title+" ", innerWidth)
+	fill := innerWidth - runeCount(titleText)
+	if fill < 0 {
+		fill = 0
+	}
+	return "+" + titleText + strings.Repeat("-", fill) + "+"
+}
+
 // renderPane draws a fixed-size ASCII-bordered pane with the title inscribed
 // in the top border. The cursor line is highlighted; the pane is always
 // exactly width x height.
@@ -630,12 +679,7 @@ func renderPane(title string, width, height int, focused bool, lines []string, c
 		innerHeight = 1
 	}
 
-	titleText := " " + title + " "
-	fill := innerWidth - runeCount(titleText)
-	if fill < 0 {
-		fill = 0
-	}
-	top := border.Render("+" + titleText + strings.Repeat("-", fill) + "+")
+	top := border.Render(paneTopLine(title, innerWidth))
 
 	rows := make([]string, 0, innerHeight)
 	for i, line := range lines {
@@ -689,25 +733,42 @@ func (m Dashboard) render() string {
 	}
 
 	width, height := m.width, m.height
-	if width < 60 {
-		width = 80
+	if width < minimumWidth {
+		width = minimumWidth
 	}
-	if height < 12 {
-		height = 24
+	if height < minimumHeight {
+		height = minimumHeight
 	}
 
 	status := truncate(m.statusLine(), width)
 	footer := truncate(m.footerLine(), width)
 
-	paneHeight := height - 2
-	logsHeight := paneHeight * 2 / 5
+	profileLines, profileCursor := m.profileLines()
+	outboundLines, outboundCursor := m.outboundLines()
+	logLines := m.logLines()
+
+	paneArea := height - 2
+	var body string
+	if width >= comfortableWidth && paneArea >= comfortableArea {
+		body = m.renderGrid(width, paneArea, profileLines, profileCursor, outboundLines, outboundCursor, logLines)
+	} else {
+		body = m.renderStacked(width, paneArea, profileLines, profileCursor, outboundLines, outboundCursor, logLines)
+	}
+
+	return strings.Join([]string{status, body, footer}, "\n")
+}
+
+// renderGrid lays the three panes out with profiles and outbounds side by side
+// and logs beneath, when there is room for it.
+func (m Dashboard) renderGrid(width, paneArea int, profileLines []string, profileCursor int, outboundLines []string, outboundCursor int, logLines []string) string {
+	logsHeight := paneArea * 2 / 5
 	if logsHeight < 4 {
 		logsHeight = 4
 	}
-	topHeight := paneHeight - logsHeight
+	topHeight := paneArea - logsHeight
 	if topHeight < 4 {
 		topHeight = 4
-		logsHeight = paneHeight - topHeight
+		logsHeight = paneArea - topHeight
 	}
 
 	profilesWidth := width * 2 / 5
@@ -719,16 +780,40 @@ func (m Dashboard) render() string {
 	}
 	outboundsWidth := width - profilesWidth - 1
 
-	profileLines, profileCursor := m.profileLines()
-	outboundLines, outboundCursor := m.outboundLines()
-	logLines := m.logLines()
-
-	profilesPane := renderPane("profiles", profilesWidth, topHeight, m.pane == paneProfiles, profileLines, profileCursor)
-	outboundsPane := renderPane("outbounds", outboundsWidth, topHeight, m.pane == paneOutbounds, outboundLines, outboundCursor)
-	logsPane := renderPane("logs", width, logsHeight, m.pane == paneLogs, logLines, -1)
+	profilesPane := renderPane(m.paneTitle(paneProfiles), profilesWidth, topHeight, m.pane == paneProfiles, profileLines, profileCursor)
+	outboundsPane := renderPane(m.paneTitle(paneOutbounds), outboundsWidth, topHeight, m.pane == paneOutbounds, outboundLines, outboundCursor)
+	logsPane := renderPane(m.paneTitle(paneLogs), width, logsHeight, m.pane == paneLogs, logLines, -1)
 
 	top := lipgloss.JoinHorizontal(lipgloss.Top, profilesPane, outboundsPane)
-	return strings.Join([]string{status, top, logsPane, footer}, "\n")
+	return strings.Join([]string{top, logsPane}, "\n")
+}
+
+// renderStacked collapses the two unfocused panes to single title bars and
+// gives the focused pane the remaining vertical space.
+func (m Dashboard) renderStacked(width, paneArea int, profileLines []string, profileCursor int, outboundLines []string, outboundCursor int, logLines []string) string {
+	inactive := 2
+	activeHeight := paneArea - inactive
+	if activeHeight < 4 {
+		activeHeight = 4
+	}
+
+	var profiles, outbounds, logs string
+	switch m.pane {
+	case paneProfiles:
+		profiles = renderPane(m.paneTitle(paneProfiles), width, activeHeight, true, profileLines, profileCursor)
+		outbounds = paneBar(m.paneTitle(paneOutbounds), width, false)
+		logs = paneBar(m.paneTitle(paneLogs), width, false)
+	case paneOutbounds:
+		profiles = paneBar(m.paneTitle(paneProfiles), width, false)
+		outbounds = renderPane(m.paneTitle(paneOutbounds), width, activeHeight, true, outboundLines, outboundCursor)
+		logs = paneBar(m.paneTitle(paneLogs), width, false)
+	default:
+		profiles = paneBar(m.paneTitle(paneProfiles), width, false)
+		outbounds = paneBar(m.paneTitle(paneOutbounds), width, false)
+		logs = renderPane(m.paneTitle(paneLogs), width, activeHeight, true, logLines, -1)
+	}
+
+	return strings.Join([]string{profiles, outbounds, logs}, "\n")
 }
 
 func (m Dashboard) statusLine() string {
@@ -772,11 +857,11 @@ func (m Dashboard) connView() string {
 	spinner := string(spinnerFrames[m.spinner%len(spinnerFrames)])
 	switch m.pending {
 	case "connect":
-		return spinner + " requested: connect"
+		return spinner + " connecting"
 	case "disconnect":
-		return spinner + " requested: disconnect"
+		return spinner + " disconnecting"
 	case "restart":
-		return spinner + " requested: restart"
+		return spinner + " restarting"
 	}
 	switch m.snapshot.State {
 	case client.StateStarting:
@@ -882,7 +967,7 @@ func (m Dashboard) footerLine() string {
 	if m.store.AutoStart {
 		autostart = "on"
 	}
-	return "[s] core " + coreState + " | [A] autostart " + autostart + " | [r] restart | [tab] pane | [j/k] move | [enter] select | [a] add | [d] del | [q] quit"
+	return "[s] core " + coreState + " | [A] autostart " + autostart + " | [r] restart | [tab] next | [j/k] move | [q] quit"
 }
 
 func formatBytes(value int64) string {
