@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Kind distinguishes a remote subscription from a local config.
@@ -184,4 +186,26 @@ func newID() string {
 	bytes := make([]byte, 8)
 	_, _ = rand.Read(bytes)
 	return hex.EncodeToString(bytes)
+}
+
+// DefaultName derives a display name from a config document when the caller did
+// not supply one: a JSON config uses its first outbound tag, a config URI uses
+// its fragment. It never returns an empty string.
+func DefaultName(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if strings.HasPrefix(trimmed, "{") {
+		var parsed struct {
+			Outbounds []struct {
+				Tag string `json:"tag"`
+			} `json:"outbounds"`
+		}
+		if err := json.Unmarshal([]byte(trimmed), &parsed); err == nil && len(parsed.Outbounds) > 0 && parsed.Outbounds[0].Tag != "" {
+			return parsed.Outbounds[0].Tag
+		}
+		return "Local"
+	}
+	if uri, err := url.Parse(trimmed); err == nil && uri.Fragment != "" {
+		return uri.Fragment
+	}
+	return "Local"
 }

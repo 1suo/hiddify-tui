@@ -121,6 +121,9 @@ func ProfileAddLocal(ctx context.Context, core client.Client, store *profile.Sto
 		WriteError(stderr, "profile add", err)
 		return ExitRejected
 	}
+	if name == "" {
+		name = profile.DefaultName(content)
+	}
 	added := store.Add(profile.Profile{Name: name, Kind: profile.KindLocal, Content: content}, setActive)
 	if err := store.Save(); err != nil {
 		WriteError(stderr, "profile add", err)

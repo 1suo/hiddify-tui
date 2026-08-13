@@ -109,6 +109,34 @@ func TestProgramQuitsOnQ(t *testing.T) {
 	}
 }
 
+func TestDashboardAddInputTreatsEnterAsNewline(t *testing.T) {
+	model := newTestDashboard()
+	model.adding = true
+	model.input = "line1"
+
+	updated, cmd := model.Update(tea.KeyPressMsg(tea.Key{Text: "enter"}))
+	if cmd != nil {
+		t.Fatal("enter must insert a newline, not submit")
+	}
+	m := updated.(Dashboard)
+	if m.adding != true || m.input != "line1\n" {
+		t.Fatalf("input after enter = %q, adding=%t", m.input, m.adding)
+	}
+
+	// ctrl+d submits
+	updated, cmd = m.Update(tea.KeyPressMsg(tea.Key{Code: 'd', Mod: tea.ModCtrl}))
+	if cmd == nil {
+		t.Fatal("ctrl+d must submit")
+	}
+	if updated.(Dashboard).adding {
+		t.Fatal("submit should leave add mode")
+	}
+	if result := cmd().(actionResult); result.err != nil {
+		// "line1" is not a valid config; addProfile reports the parse error.
+		t.Logf("submit result (expected error for invalid config): %v", result.err)
+	}
+}
+
 func TestDashboardFitsScreen(t *testing.T) {
 	core := &client.FakeClient{}
 	store, _ := profile.Open("/tmp/hiddify-tui-test-profiles.json")

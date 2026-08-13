@@ -160,13 +160,9 @@ func (m Dashboard) inputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.adding = false
 		m.input = ""
 	case "enter":
-		m.adding = false
-		content := strings.TrimSpace(m.input)
-		m.input = ""
-		if content == "" {
-			return m, nil
-		}
-		return m, m.addProfile(content)
+		m.input += "\n"
+	case "ctrl+d":
+		return m.submitAdd()
 	case "backspace":
 		runes := []rune(m.input)
 		if len(runes) > 0 {
@@ -178,6 +174,16 @@ func (m Dashboard) inputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m Dashboard) submitAdd() (tea.Model, tea.Cmd) {
+	m.adding = false
+	content := strings.TrimSpace(m.input)
+	m.input = ""
+	if content == "" {
+		return m, nil
+	}
+	return m, m.addProfile(content)
 }
 
 func (m Dashboard) addProfile(content string) tea.Cmd {
@@ -194,7 +200,7 @@ func (m Dashboard) addProfile(content string) tea.Cmd {
 			}
 		} else {
 			if parseErr := m.core.Parse(m.ctx, content); parseErr == nil {
-				m.store.Add(profile.Profile{Name: "Local", Kind: profile.KindLocal, Content: content}, false)
+				m.store.Add(profile.Profile{Name: profile.DefaultName(content), Kind: profile.KindLocal, Content: content}, false)
 				err = m.store.Save()
 			} else {
 				err = parseErr
@@ -594,9 +600,9 @@ func (m Dashboard) footerLine() string {
 	if m.adding {
 		display := strings.ReplaceAll(m.input, "\n", " ")
 		if display == "" {
-			return "add profile › paste URL or config, enter to confirm, esc to cancel"
+			return "add profile › paste URL or config · enter newline · ctrl+d confirm · esc cancel"
 		}
-		return "add profile › " + display
+		return "add profile › " + display + "  ·  ctrl+d confirm"
 	}
 	return "tab pane · ↑↓ move · enter select · c/x/r conn · a add · d del · q quit"
 }
