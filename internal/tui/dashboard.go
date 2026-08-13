@@ -163,6 +163,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.snapshot != nil {
 			m.snapshot = *msg.snapshot
+			m.action = ""
 		}
 		if msg.groups != nil {
 			m.groups = msg.groups
@@ -178,7 +179,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.action = msg.action + ": " + simplifyError(msg.err)
 		} else {
-			m.action = msg.action + " requested"
+			m.action = msg.action
 		}
 	case coreStarted:
 		if msg.err != nil {
@@ -642,10 +643,14 @@ func (m Dashboard) statusLine() string {
 		state = "stopped"
 	}
 	if state != "started" {
-		if m.action != "" {
-			return "state " + state + "  |  " + m.action
+		line := "state " + state
+		if m.snapshot.Message != "" {
+			line += " | " + m.snapshot.Message
 		}
-		return "state " + state
+		if m.action != "" {
+			line += " | " + m.action
+		}
+		return line
 	}
 	profile := m.snapshot.CurrentProfile
 	if profile == "" {
