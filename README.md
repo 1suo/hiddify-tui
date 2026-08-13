@@ -1,60 +1,52 @@
 # hiddify-tui
 
 A terminal client for [`hiddify-core`](https://github.com/hiddify/hiddify-core).
-It drives the core's `Core` gRPC service (`127.0.0.1:17078`) and keeps profiles
-client-side — either attaching to an already-running core or spawning a headless
-one on demand.
+It drives the core's `Core` gRPC service at `127.0.0.1:17078` and keeps profiles
+client-side — attaching to an already-running core or spawning a headless one on
+demand.
 
 ## Install
 
+### Linux
+
 ```sh
-# 1. build the clients
-make build                     # -> dist/hiddify-tui, dist/hiddify-migrate
-
-# 2. get the core (or point --core-binary at your own)
-./dist/hiddify-tui install-core
-
-# 3. (optional) system-wide install + auto-start service
+make build                          # -> dist/hiddify-tui, dist/hiddify-migrate
 sudo ./packaging/linux/install.sh ./dist
 ```
 
-## Usage
+Installs the client and the core as a `hiddify-core.service` systemd unit.
 
-Interactive dashboard:
+### macOS
+
+```sh
+# build from Linux or macOS
+GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o dist/hiddify-tui ./cmd/hiddify-tui
+sudo ./packaging/macos/install.sh ./dist
+```
+
+Installs to `/usr/local/bin`; attaches to the GUI's core (or a standalone core
+via a root LaunchDaemon).
+
+### Windows
+
+```powershell
+# from an elevated PowerShell
+.\packaging\windows\install.ps1 -BuildDir .\dist
+```
+
+Installs the client on `PATH`; optionally registers a headless core service.
+
+> Prebuilt binaries are published with GitHub releases. Package-manager
+> packages (AUR, Homebrew, Scoop) are welcome contributions.
+
+## Usage
 
 ```sh
 hiddify-tui
 ```
 
-| Key | Action |
-|-----|--------|
-| `c` | connect / disconnect (press twice to confirm disconnect) |
-| `r` | restart connection |
-| `s` | start / stop the core |
-| `A` | toggle auto-start |
-| `tab` / `1` `2` `3` | switch pane |
-| `j`/`k` | move cursor |
-| `enter` | use selected profile / outbound |
-| `a` / `d` | add / delete profile (profiles pane) |
-| `t` | test outbound (outbounds pane) |
-| `q` | quit |
-
-Scriptable CLI:
-
-```sh
-hiddify-tui status
-hiddify-tui --json status
-hiddify-tui connect | disconnect | restart
-hiddify-tui profile add https://sub.example.com/…
-hiddify-tui profile add-file /path/config.json
-hiddify-tui profile activate <id>
-hiddify-tui outbound list | select <group> <out> | test <out>
-hiddify-tui logs --level warn
-hiddify-tui settings validate /path/settings.json
-hiddify-tui migrate gui --database … --configs … --apply
-```
-
-Exit codes: `0` success, `2` usage, `3` core unavailable, `4` rejected.
+All shortcuts are shown in the interface itself (pane titles, status line, and
+footer).
 
 ## Development
 
