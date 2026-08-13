@@ -1,0 +1,171 @@
+panic: runtime error: index out of range [0] with length 0
+
+goroutine 1 [running]:
+github.com/hiddify/hiddify-core/v2/config.setOutbounds(0xc0004fe0f0, 0xc0004fe000, 0xc000392708, 0xc00037f1c0)
+	github.com/hiddify/hiddify-core/v2/config/builder.go:302 +0x2197
+github.com/hiddify/hiddify-core/v2/config.BuildConfig({0x2a5c998?, 0xc00056ccc0?}, 0xc000392708, 0xc0002bf300?)
+	github.com/hiddify/hiddify-core/v2/config/builder.go:85 +0x205
+github.com/hiddify/hiddify-core/v2/config.ParseBuildConfig({0x2a5c998?, 0xc00056ccc0?}, 0xc000392708?, 0x4cd2f3?)
+	github.com/hiddify/hiddify-core/v2/config/config.go:58 +0x7d
+github.com/hiddify/hiddify-core/v2/hcore.buildStandaloneConfig({0x2a5c998, 0xc00056ccc0}, 0x2579260?, 0xc000392708)
+	github.com/hiddify/hiddify-core/v2/hcore/standalone.go:159 +0x45
+github.com/hiddify/hiddify-core/v2/hcore.readAndBuildConfig({0x2a5c998, 0xc00056ccc0}, {0x0, 0x0}, {0x7ffcac7c4df7?, 0xc000112258?}, 0xc000392708)
+	github.com/hiddify/hiddify-core/v2/hcore/standalone.go:81 +0xe5
+github.com/hiddify/hiddify-core/v2/hcore.RunStandalone({_, _}, {_, _}, {_, _}, {0x0, {0x2604411, 0x4}, {0x261138f, ...}, ...})
+	github.com/hiddify/hiddify-core/v2/hcore/standalone.go:24 +0x131
+github.com/hiddify/hiddify-core/cmd.runCommand(0xc000423500?, {0xc00040d760?, 0x4?, 0x260453d?})
+	github.com/hiddify/hiddify-core/cmd/cmd_hiddify_run.go:50 +0x13e
+github.com/spf13/cobra.(*Command).execute(0x4041a60, {0xc00040d740, 0x2, 0x2})
+	github.com/spf13/cobra@v1.10.2/command.go:1019 +0xae7
+github.com/spf13/cobra.(*Command).ExecuteC(0x4043a00)
+	github.com/spf13/cobra@v1.10.2/command.go:1148 +0x465
+github.com/spf13/cobra.(*Command).Execute(...)
+	github.com/spf13/cobra@v1.10.2/command.go:1071
+github.com/hiddify/hiddify-core/cmd.ParseCli({0xc0000520d0?, 0x3dfe4e8?, 0xc000002380?})
+	github.com/hiddify/hiddify-core/cmd/interface.go:41 +0x5f
+main.main()
+	github.com/hiddify/hiddify-core/cmd/main/main.go:17 +0x45
+
+goroutine 6 [select]:
+github.com/desertbit/timer.timerRoutine()
+	github.com/desertbit/timer@v0.0.0-20180107155436-c41aec40b27f/timers.go:119 +0x9e
+created by github.com/desertbit/timer.init.0 in goroutine 1
+	github.com/desertbit/timer@v0.0.0-20180107155436-c41aec40b27f/timers.go:15 +0x1a
+
+goroutine 9 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).sched(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:92 +0x13d
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:78 +0xe5
+
+goroutine 10 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).sched(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:92 +0x13d
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:78 +0xe5
+
+goroutine 11 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).sched(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:92 +0x13d
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:78 +0xe5
+
+goroutine 12 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).sched(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:92 +0x13d
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:78 +0xe5
+
+goroutine 13 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).sched(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:92 +0x13d
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:78 +0xe5
+
+goroutine 14 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).sched(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:92 +0x13d
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:78 +0xe5
+
+goroutine 15 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).sched(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:92 +0x13d
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:78 +0xe5
+
+goroutine 16 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).sched(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:92 +0x13d
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:78 +0xe5
+
+goroutine 18 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).sched(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:92 +0x13d
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:78 +0xe5
+
+goroutine 19 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).sched(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:92 +0x13d
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:78 +0xe5
+
+goroutine 20 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).sched(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:92 +0x13d
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:78 +0xe5
+
+goroutine 21 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).sched(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:92 +0x13d
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:78 +0xe5
+
+goroutine 22 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).sched(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:92 +0x13d
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:78 +0xe5
+
+goroutine 23 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).sched(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:92 +0x13d
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:78 +0xe5
+
+goroutine 24 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).sched(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:92 +0x13d
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:78 +0xe5
+
+goroutine 25 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).sched(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:92 +0x13d
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:78 +0xe5
+
+goroutine 26 [select]:
+github.com/xtaci/kcp-go/v5.(*TimedSched).prepend(0xc0001cf5e0)
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:129 +0x86
+created by github.com/xtaci/kcp-go/v5.NewTimedSched in goroutine 1
+	github.com/xtaci/kcp-go/v5@v5.6.70/timedsched.go:80 +0x16d
+
+goroutine 34 [chan receive]:
+github.com/sagernet/sing-box/common/monitoring.(*Broadcaster[...]).watchContext(0x2a84640)
+	github.com/sagernet/sing-box@v1.13.0/common/monitoring/brodcaster.go:30 +0x2c
+created by github.com/sagernet/sing-box/common/monitoring.NewBroadcaster[...] in goroutine 1
+	github.com/sagernet/sing-box@v1.13.0/common/monitoring/brodcaster.go:25 +0x107
+
+goroutine 35 [chan receive]:
+github.com/sagernet/sing-box/common/monitoring.(*Broadcaster[...]).watchContext(0x2a84580)
+	github.com/sagernet/sing-box@v1.13.0/common/monitoring/brodcaster.go:30 +0x2c
+created by github.com/sagernet/sing-box/common/monitoring.NewBroadcaster[...] in goroutine 1
+	github.com/sagernet/sing-box@v1.13.0/common/monitoring/brodcaster.go:25 +0x107
+
+goroutine 36 [chan receive]:
+github.com/sagernet/sing-box/common/monitoring.(*Broadcaster[...]).watchContext(0x2a844c0)
+	github.com/sagernet/sing-box@v1.13.0/common/monitoring/brodcaster.go:30 +0x2c
+created by github.com/sagernet/sing-box/common/monitoring.NewBroadcaster[...] in goroutine 1
+	github.com/sagernet/sing-box@v1.13.0/common/monitoring/brodcaster.go:25 +0x107
+
+goroutine 37 [chan receive]:
+github.com/sagernet/sing-box/common/monitoring.(*Broadcaster[...]).watchContext(0x2a84400)
+	github.com/sagernet/sing-box@v1.13.0/common/monitoring/brodcaster.go:30 +0x2c
+created by github.com/sagernet/sing-box/common/monitoring.NewBroadcaster[...] in goroutine 1
+	github.com/sagernet/sing-box@v1.13.0/common/monitoring/brodcaster.go:25 +0x107
+
+goroutine 38 [chan receive]:
+github.com/sagernet/sing-box/common/monitoring.(*Broadcaster[...]).watchContext(0x2a84400)
+	github.com/sagernet/sing-box@v1.13.0/common/monitoring/brodcaster.go:30 +0x2c
+created by github.com/sagernet/sing-box/common/monitoring.NewBroadcaster[...] in goroutine 1
+	github.com/sagernet/sing-box@v1.13.0/common/monitoring/brodcaster.go:25 +0x107
+
+goroutine 27 [select]:
+github.com/sagernet/sing/common/observable.(*Observer[...]).process(0x2a84b80)
+	github.com/sagernet/sing@v0.8.11-0.20260514110501-905ad103a4df/common/observable/observer.go:35 +0xc5
+created by github.com/sagernet/sing/common/observable.NewObserver[...] in goroutine 1
+	github.com/sagernet/sing@v0.8.11-0.20260514110501-905ad103a4df/common/observable/observer.go:27 +0xe7
