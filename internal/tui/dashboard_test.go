@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -283,4 +285,200 @@ func TestStreamDashboardAppliesEvents(t *testing.T) {
 			t.Fatal("did not receive event-applied dashboard update")
 		}
 	}
+}
+
+func TestProgramQuitDetachesWithoutDisconnecting(t *testing.T) {
+	operator := &recordingConnectionOperator{}
+	daemon := &detachFakeControl{operator: operator}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	updates := make(chan dashboardUpdate, 1)
+	model := NewDashboard(control.Snapshot{}, nil)
+	model.updates = updates
+	model.ctx = ctx
+	model.connection = operator
+	go streamDashboard(ctx, daemon, daemon, updates)
+
+	_, err := tea.NewProgram(model,
+		tea.WithInput(strings.NewReader("q")),
+		tea.WithOutput(io.Discard),
+		tea.WithEnvironment([]string{"TERM=xterm-256color"}),
+	).Run()
+	if err != nil {
+		t.Fatalf("quit run returned error: %v", err)
+	}
+	if operator.connects != 0 || operator.disconnects != 0 || operator.restarts != 0 {
+		t.Fatalf("quitting the TUI mutated connection state: %+v", operator)
+	}
+}
+
+type detachFakeControl struct {
+	operator *recordingConnectionOperator
+}
+
+func (d *detachFakeControl) GetSnapshot(context.Context) (control.Snapshot, error) {
+	return control.Snapshot{APIMajor: 1, ConnectionState: control.ConnectionStopped}, nil
+}
+
+func (d *detachFakeControl) WatchEvents(context.Context, uint64) (<-chan control.Event, error) {
+	events := make(chan control.Event)
+	close(events)
+	return events, nil
+}
+
+func (d *detachFakeControl) Connect(context.Context, string, control.ConnectionMode) error {
+	d.operator.connects++
+	return nil
+}
+
+func (d *detachFakeControl) Disconnect(context.Context) error {
+	d.operator.disconnects++
+	return nil
+}
+
+func (d *detachFakeControl) Restart(context.Context) error {
+	d.operator.restarts++
+	return nil
+}
+
+type recordingProfileAPI struct {
+	active       string
+	addedName    string
+	addedContent string
+	addedURL     string
+	profiles     []control.Profile
+}
+
+func (r *recordingProfileAPI) AddRemoteProfile(_ context.Context, url, name string, _ bool) (control.Profile, error) {
+	r.addedURL = url
+	r.addedName = name
+	return control.Profile{ID: "new", Name: name, Kind: control.ProfileRemote}, nil
+}
+
+func (r *recordingProfileAPI) AddLocalProfile(_ context.Context, name string, _ bool, content io.Reader) (control.Profile, error) {
+	data, _ := io.ReadAll(content)
+	r.addedContent = string(data)
+	r.addedName = name
+	return control.Profile{ID: "new", Name: name, Kind: control.ProfileLocal}, nil
+}
+
+func (r *recordingProfileAPI) UpdateProfileName(context.Context, string, string) (control.Profile, error) {
+	panic("unused")
+}
+func (r *recordingProfileAPI) RefreshProfile(context.Context, string) error { panic("unused") }
+func (r *recordingProfileAPI) DeleteProfile(context.Context, string) error  { panic("unused") }
+func (r *recordingProfileAPI) SetActiveProfile(_ context.Context, id string) error {
+	r.active = id
+	return nil
+}
+func (r *recordingProfileAPI) ListProfiles(context.Context) ([]control.Profile, error) {
+	return r.profiles, nil
+}
+func (r *recordingProfileAPI) GetProfile(context.Context, string) (control.Profile, error) {
+	panic("unused")
+}
+
+func TestDashboardAddProfileFromPaste(t *testing.T) {
+	api := &recordingProfileAPI{}
+	model := NewDashboard(control.Snapshot{}, nil)
+	model.page = pageProfiles
+	model.ctx = context.Background()
+	model.profilesAPI = api
+	model.localProfilesAPI = api
+	model.profilesReader = api
+
+	model, cmd := upd(t, model, tea.KeyPressMsg(tea.Key{Text: "a"}))
+	if cmd != nil || !model.adding {
+		t.Fatal("a should begin add mode without a command")
+	}
+	model, _ = upd(t, model, tea.KeyPressMsg(tea.Key{Text: "p"}))
+	if model.addStep != 1 || model.addSource != "paste" {
+		t.Fatalf("after p: step=%d source=%q", model.addStep, model.addSource)
+	}
+	model, _ = upd(t, model, tea.KeyPressMsg(tea.Key{Text: "Home"}))
+	model, _ = upd(t, model, tea.KeyPressMsg(tea.Key{Text: "enter"}))
+	if model.addStep != 2 || model.addName != "Home" {
+		t.Fatalf("after name: step=%d name=%q", model.addStep, model.addName)
+	}
+	model, _ = upd(t, model, tea.KeyPressMsg(tea.Key{Text: "vmess://example"}))
+	model, cmd = upd(t, model, tea.KeyPressMsg(tea.Key{Text: "enter"}))
+	if model.adding {
+		t.Fatal("submit should leave add mode")
+	}
+	result := cmd().(actionResult)
+	if result.err != nil {
+		t.Fatalf("add result = %v", result.err)
+	}
+	if api.addedContent != "vmess://example" || api.addedName != "Home" {
+		t.Fatalf("added content=%q name=%q", api.addedContent, api.addedName)
+	}
+}
+
+func TestDashboardAddProfileFromFile(t *testing.T) {
+	api := &recordingProfileAPI{}
+	model := NewDashboard(control.Snapshot{}, nil)
+	model.page = pageProfiles
+	model.ctx = context.Background()
+	model.profilesAPI = api
+	model.localProfilesAPI = api
+	model.profilesReader = api
+
+	path := t.TempDir() + "/profile.json"
+	if err := os.WriteFile(path, []byte(`{"tag":"file-config"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	model, _ = upd(t, model, tea.KeyPressMsg(tea.Key{Text: "a"}))
+	model, _ = upd(t, model, tea.KeyPressMsg(tea.Key{Text: "f"}))
+	model, _ = upd(t, model, tea.KeyPressMsg(tea.Key{Text: "enter"}))
+	model, _ = upd(t, model, tea.KeyPressMsg(tea.Key{Text: path}))
+	model, cmd := upd(t, model, tea.KeyPressMsg(tea.Key{Text: "enter"}))
+	if result := cmd().(actionResult); result.err != nil {
+		t.Fatalf("add result = %v", result.err)
+	}
+	if api.addedContent != `{"tag":"file-config"}` {
+		t.Fatalf("added content = %q", api.addedContent)
+	}
+}
+
+func TestDashboardAddProfileCancel(t *testing.T) {
+	model := NewDashboard(control.Snapshot{}, nil)
+	model.page = pageProfiles
+	model, _ = upd(t, model, tea.KeyPressMsg(tea.Key{Text: "a"}))
+	if !model.adding {
+		t.Fatal("a should begin add mode")
+	}
+	model, _ = upd(t, model, tea.KeyPressMsg(tea.Key{Text: "esc"}))
+	if model.adding {
+		t.Fatal("esc should cancel add mode")
+	}
+}
+
+func TestDashboardRefreshProfilesAfterAdd(t *testing.T) {
+	api := &recordingProfileAPI{profiles: []control.Profile{{ID: "old", Name: "Old"}}}
+	model := NewDashboard(control.Snapshot{}, nil)
+	model.ctx = context.Background()
+	model.profilesAPI = api
+	model.localProfilesAPI = api
+	model.profilesReader = api
+
+	api.profiles = []control.Profile{{ID: "old", Name: "Old"}, {ID: "new", Name: "New"}}
+	model, cmd := upd(t, model, actionResult{action: "add profile"})
+	if cmd == nil {
+		t.Fatal("profile mutation should trigger a refresh")
+	}
+	model, _ = upd(t, model, cmd())
+	if len(model.profiles) != 2 || model.profiles[1].Name != "New" {
+		t.Fatalf("refreshed profiles = %#v", model.profiles)
+	}
+}
+
+func upd(t *testing.T, model Dashboard, msg tea.Msg) (Dashboard, tea.Cmd) {
+	t.Helper()
+	updated, cmd := model.Update(msg)
+	if updated == nil {
+		t.Fatal("Update returned nil model")
+	}
+	return updated.(Dashboard), cmd
 }

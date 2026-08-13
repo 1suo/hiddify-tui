@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 
 	"github.com/1suo/hiddify-tui/internal/client"
 	"github.com/1suo/hiddify-tui/internal/control"
@@ -34,6 +36,8 @@ type Dashboard struct {
 	diagnostics       control.Diagnostics
 	connection        control.ConnectionOperator
 	profilesAPI       control.ProfileWriter
+	localProfilesAPI  control.LocalProfileWriter
+	profilesReader    control.ProfileReader
 	outboundsAPI      control.OutboundOperator
 	logsAPI           control.LogReader
 	ctx               context.Context
@@ -41,6 +45,12 @@ type Dashboard struct {
 	cursor            int
 	confirmDisconnect bool
 	confirmLogClear   bool
+
+	adding    bool
+	addStep   int
+	addSource string
+	addName   string
+	input     string
 }
 
 type page string
@@ -70,6 +80,16 @@ type actionResult struct {
 	err    error
 }
 
+type profilesLoaded struct {
+	profiles []control.Profile
+	err      error
+}
+
+type groupsLoaded struct {
+	groups []control.OutboundGroup
+	err    error
+}
+
 func NewDashboard(snapshot control.Snapshot, err error) Dashboard {
 	return Dashboard{snapshot: snapshot, err: err}
 }
@@ -79,6 +99,9 @@ func (m Dashboard) Init() tea.Cmd { return waitForDashboardUpdate(m.updates) }
 func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
+		if m.adding {
+			return m.addKey(msg)
+		}
 		if msg.String() != "x" {
 			m.confirmDisconnect = false
 		}
@@ -102,6 +125,14 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.page = pageSettings
 		case "6":
 			m.page = pageService
+		case "a":
+			if m.page == pageProfiles {
+				m.adding = true
+				m.addStep = 0
+				m.addSource = ""
+				m.addName = ""
+				m.input = ""
+			}
 		case "c":
 			return m, m.connectionAction("connect")
 		case "x":
@@ -134,16 +165,35 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.confirmLogClear = false
 			return m, m.clearLogsAction()
 		}
+	case tea.PasteMsg:
+		if m.adding && m.addStep > 0 {
+			m.input += msg.Content
+		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case dashboardUpdate:
 		m.snapshot, m.err, m.profiles, m.groups, m.logs, m.settings, m.service, m.diagnostics = msg.snapshot, msg.err, msg.profiles, msg.groups, msg.logs, msg.settings, msg.service, msg.diagnostics
 		return m, waitForDashboardUpdate(m.updates)
+	case profilesLoaded:
+		if msg.err != nil {
+			m.action = fmt.Sprintf("list profiles: %v", msg.err)
+		} else {
+			m.profiles = msg.profiles
+		}
+	case groupsLoaded:
+		if msg.err != nil {
+			m.action = fmt.Sprintf("list outbounds: %v", msg.err)
+		} else {
+			m.groups = msg.groups
+		}
 	case actionResult:
 		if msg.err != nil {
 			m.action = fmt.Sprintf("%s failed: %v", msg.action, msg.err)
-		} else {
-			m.action = msg.action + " requested"
+			return m, nil
+		}
+		m.action = msg.action + " requested"
+		if strings.Contains(msg.action, "profile") || strings.Contains(msg.action, "outbound") {
+			return m, tea.Batch(m.loadProfilesCmd(), m.loadGroupsCmd())
 		}
 	}
 	return m, nil
@@ -180,9 +230,9 @@ func (m Dashboard) View() tea.View {
 
 func (m Dashboard) footer() string {
 	if m.width > 0 && m.width <= 80 {
-		return "1 Dash  2 Prof  3 Out  4 Logs  5 Set  6 Svc\nc connect  x x disconnect  r restart  Enter select  t test  C C clear\nq/Ctrl+C quit; connection stays active"
+		return "1 Dash  2 Prof  3 Out  4 Logs  5 Set  6 Svc\nc connect  x x disconnect  r restart  Enter select  t test  a add  C C clear\nq/Ctrl+C quit; connection stays active"
 	}
-	return "1 Dashboard  2 Profiles  3 Outbounds  4 Logs  5 Settings  6 Service\nc connect  x disconnect  r restart  ↑/↓ select  Enter activate/select  t test outbound  C clear logs\nq / Ctrl+C quit (connection stays active)"
+	return "1 Dashboard  2 Profiles  3 Outbounds  4 Logs  5 Settings  6 Service\nc connect  x disconnect  r restart  ↑/↓ select  Enter activate/select  t test outbound  a add profile  C clear logs\nq / Ctrl+C quit (connection stays active)"
 }
 
 func (m Dashboard) dashboardView() string {
@@ -206,8 +256,11 @@ func (m Dashboard) dashboardView() string {
 
 func (m Dashboard) profilesView() string {
 	content := "Profiles\n"
+	if m.adding {
+		content += "\n" + m.addView()
+	}
 	if len(m.profiles) == 0 {
-		return content + "\nNo profiles available.\nUse hiddify-tui profile add or profile add-file."
+		return content + "\nNo profiles available.\nUse hiddify-tui profile add, or press a to add one here."
 	}
 	for index, profile := range m.profiles {
 		active := " "
@@ -221,6 +274,17 @@ func (m Dashboard) profilesView() string {
 		content += fmt.Sprintf("\n%s%s %s  [%s]  %s", cursor, active, profile.Name, profile.Kind, valueOr(profile.RedactedURL, "local"))
 	}
 	return content
+}
+
+func (m Dashboard) addView() string {
+	if m.addStep == 0 {
+		return "Add profile\n[p] paste config content\n[f] from file path\n[u] remote subscription URL\n[esc] cancel"
+	}
+	sourceLabel := map[string]string{"paste": "Paste config content", "file": "File path", "url": "Subscription URL"}[m.addSource]
+	if m.addStep == 1 {
+		return fmt.Sprintf("Add profile (%s)\nName (Enter to confirm, empty for automatic): %s_", m.addSource, m.input)
+	}
+	return fmt.Sprintf("Add profile (%s)\n%s (Enter to confirm): %s_", m.addSource, sourceLabel, m.input)
 }
 
 func (m Dashboard) outboundsView() string {
@@ -291,7 +355,11 @@ func (m Dashboard) serviceView() string {
 
 // Run opens the alternate-screen dashboard. Ctrl+C is a normal detach.
 func Run(snapshot control.Snapshot, err error) error {
-	_, runErr := tea.NewProgram(NewDashboard(snapshot, err)).Run()
+	return RunWithOptions(snapshot, err, false)
+}
+
+func RunWithOptions(snapshot control.Snapshot, err error, noColor bool) error {
+	_, runErr := tea.NewProgram(NewDashboard(snapshot, err), programOptions(noColor)...).Run()
 	if errors.Is(runErr, tea.ErrInterrupted) {
 		return nil
 	}
@@ -302,6 +370,10 @@ func Run(snapshot control.Snapshot, err error) error {
 // daemon event stream. A dropped stream is retried with bounded backoff; the
 // client-side state reducer handles sequence gaps by fetching a fresh snapshot.
 func RunLive(ctx context.Context, daemon control.Client, watcher control.Watcher) error {
+	return RunLiveWithOptions(ctx, daemon, watcher, false)
+}
+
+func RunLiveWithOptions(ctx context.Context, daemon control.Client, watcher control.Watcher, noColor bool) error {
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	updates := make(chan dashboardUpdate, 1)
@@ -310,14 +382,23 @@ func RunLive(ctx context.Context, daemon control.Client, watcher control.Watcher
 	model.ctx = ctx
 	model.connection, _ = daemon.(control.ConnectionOperator)
 	model.profilesAPI, _ = daemon.(control.ProfileWriter)
+	model.localProfilesAPI, _ = daemon.(control.LocalProfileWriter)
+	model.profilesReader, _ = daemon.(control.ProfileReader)
 	model.outboundsAPI, _ = daemon.(control.OutboundOperator)
 	model.logsAPI, _ = daemon.(control.LogReader)
 	go streamDashboard(watchCtx, daemon, watcher, updates)
-	_, runErr := tea.NewProgram(model).Run()
+	_, runErr := tea.NewProgram(model, programOptions(noColor)...).Run()
 	if errors.Is(runErr, tea.ErrInterrupted) {
 		return nil
 	}
 	return runErr
+}
+
+func programOptions(noColor bool) []tea.ProgramOption {
+	if noColor {
+		return []tea.ProgramOption{tea.WithColorProfile(colorprofile.ASCII)}
+	}
+	return nil
 }
 
 func (m Dashboard) connectionAction(action string) tea.Cmd {
@@ -347,6 +428,119 @@ func (m Dashboard) clearLogsAction() tea.Cmd {
 		}
 	}
 	return func() tea.Msg { return actionResult{action: "clear logs", err: m.logsAPI.ClearLogs(m.ctx)} }
+}
+
+func (m Dashboard) addKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
+	if m.addStep == 0 {
+		switch msg.String() {
+		case "p", "f", "u":
+			m.addSource = map[string]string{"p": "paste", "f": "file", "u": "url"}[msg.String()]
+			m.addStep = 1
+			m.addName = ""
+			m.input = ""
+		case "esc":
+			m.adding = false
+		}
+		return m, nil
+	}
+	switch msg.String() {
+	case "esc":
+		if m.addStep == 1 {
+			m.adding = false
+		} else {
+			m.addStep = 1
+		}
+		m.input = ""
+		return m, nil
+	case "backspace":
+		m.input = removeLastRune(m.input)
+		return m, nil
+	case "enter":
+		return m.submitAdd()
+	default:
+		if msg.Text != "" {
+			m.input += msg.Text
+		}
+		return m, nil
+	}
+}
+
+func (m Dashboard) submitAdd() (tea.Model, tea.Cmd) {
+	if m.addStep == 1 {
+		m.addName = strings.TrimSpace(m.input)
+		m.input = ""
+		m.addStep = 2
+		return m, nil
+	}
+	source, name, content := m.addSource, m.addName, m.input
+	m.adding = false
+	m.addStep = 0
+	m.addSource = ""
+	m.addName = ""
+	m.input = ""
+	return m, m.addProfileCmd(source, name, content)
+}
+
+func (m Dashboard) addProfileCmd(source, name, content string) tea.Cmd {
+	return func() tea.Msg {
+		var err error
+		switch source {
+		case "paste":
+			if m.localProfilesAPI == nil {
+				return actionResult{action: "add profile", err: errors.New("daemon does not support local profile upload")}
+			}
+			_, err = m.localProfilesAPI.AddLocalProfile(m.ctx, name, false, strings.NewReader(content))
+		case "file":
+			if m.localProfilesAPI == nil {
+				return actionResult{action: "add profile", err: errors.New("daemon does not support local profile upload")}
+			}
+			var file *os.File
+			file, err = os.Open(content)
+			if err == nil {
+				_, err = m.localProfilesAPI.AddLocalProfile(m.ctx, name, false, file)
+				file.Close()
+			}
+		case "url":
+			if m.profilesAPI == nil {
+				return actionResult{action: "add profile", err: errors.New("daemon does not support remote profiles")}
+			}
+			_, err = m.profilesAPI.AddRemoteProfile(m.ctx, content, name, false)
+		default:
+			return actionResult{action: "add profile", err: errors.New("no add source selected")}
+		}
+		return actionResult{action: "add profile", err: err}
+	}
+}
+
+func (m Dashboard) loadProfilesCmd() tea.Cmd {
+	if m.profilesReader == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		profiles, err := m.profilesReader.ListProfiles(m.ctx)
+		return profilesLoaded{profiles: profiles, err: err}
+	}
+}
+
+func (m Dashboard) loadGroupsCmd() tea.Cmd {
+	if m.outboundsAPI == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		groups, err := m.outboundsAPI.ListOutboundGroups(m.ctx)
+		return groupsLoaded{groups: groups, err: err}
+	}
+}
+
+func removeLastRune(value string) string {
+	runes := []rune(value)
+	if len(runes) == 0 {
+		return value
+	}
+	return string(runes[:len(runes)-1])
 }
 
 func (m *Dashboard) moveCursor(delta int) {
