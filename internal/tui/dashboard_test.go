@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"io"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -11,6 +12,8 @@ import (
 	"github.com/1suo/hiddify-tui/internal/client"
 	"github.com/1suo/hiddify-tui/internal/profile"
 )
+
+var ansi = regexp.MustCompile("\x1b\\[[0-9;?]*[a-zA-Z]|\x1b\\][^\x07]*\x07")
 
 func newTestDashboard() Dashboard {
 	store, _ := profile.Open("/tmp/hiddify-tui-test-profiles.json")
@@ -26,7 +29,7 @@ func TestDashboardRendersPanes(t *testing.T) {
 	model := newTestDashboard()
 	model.width, model.height = 100, 30
 	view := model.render()
-	for _, want := range []string{"profiles", "outbounds", "logs", "Home", "c connect"} {
+	for _, want := range []string{"profiles", "outbounds", "logs", "Home", "c/x/r conn"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view does not contain %q:\n%s", want, view)
 		}
@@ -103,5 +106,36 @@ func TestProgramQuitsOnQ(t *testing.T) {
 	).Run()
 	if err != nil {
 		t.Fatalf("quit run returned error: %v", err)
+	}
+}
+
+func TestDashboardFitsScreen(t *testing.T) {
+	core := &client.FakeClient{}
+	store, _ := profile.Open("/tmp/hiddify-tui-test-profiles.json")
+	store.Profiles = []profile.Profile{
+		{ID: "a", Name: "a very long profile name that should be truncated", Kind: profile.KindLocal},
+		{ID: "b", Name: "B", Kind: profile.KindLocal},
+	}
+	store.ActiveID = "a"
+	model := NewDashboard(core, store, nil)
+	model.groups = []client.OutboundGroup{{
+		Tag: "selector", Type: "selector", Items: []client.Outbound{
+			{Tag: "vless § 0 with a long tag", Type: "VLESS", DelayMillis: 80, Selected: true},
+		},
+	}}
+	model.logs = []client.LogEntry{{Level: client.LogInfo, Component: "core", Message: "a long log message that should be truncated to fit the pane width"}}
+
+	for _, size := range [][2]int{{80, 24}, {100, 30}, {120, 40}, {60, 20}} {
+		model.width, model.height = size[0], size[1]
+		rendered := ansi.ReplaceAllString(model.render(), "")
+		lines := strings.Split(rendered, "\n")
+		if len(lines) > size[1] {
+			t.Fatalf("render at %dx%d produced %d lines:\n%s", size[0], size[1], len(lines), rendered)
+		}
+		for i, line := range lines {
+			if n := len([]rune(line)); n > size[0] {
+				t.Fatalf("render at %dx%d line %d is %d wide: %q", size[0], size[1], i, n, line)
+			}
+		}
 	}
 }

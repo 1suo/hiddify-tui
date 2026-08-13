@@ -440,7 +440,7 @@ func renderPane(title string, width, height int, focused bool, lines []string, c
 		body = append(body, "")
 	}
 	style := lipgloss.NewStyle().
-		Width(width).
+		Width(width - 2).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(color)
 	return style.Render(strings.Join(body, "\n"))
@@ -511,7 +511,7 @@ func (m Dashboard) render() string {
 	logsPane := renderPane("logs", width, logsHeight, m.pane == paneLogs, logLines, -1)
 
 	top := lipgloss.JoinHorizontal(lipgloss.Top, profilesPane, outboundsPane)
-	return lipgloss.JoinVertical(lipgloss.Left, status, top, logsPane, footer)
+	return strings.Join([]string{status, top, logsPane, footer}, "\n")
 }
 
 func (m Dashboard) statusLine() string {
@@ -593,7 +593,7 @@ func (m Dashboard) footerLine() string {
 	if m.adding {
 		return "add profile: paste URL or config, enter to confirm, esc to cancel"
 	}
-	return "c connect  x disconnect  r restart  tab pane  ↑/↓ move  enter select  a add  d delete  t test  q quit"
+	return "tab pane · ↑↓ move · enter select · c/x/r conn · a add · d del · q quit"
 }
 
 func formatBytes(value int64) string {
