@@ -165,6 +165,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.spawned {
 				return m, m.stopCore()
 			}
+			m.action = "core is managed externally (service); start/stop it there"
 		case "A":
 			return m, m.toggleAutoStart()
 		}
@@ -222,6 +223,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.action = msg.action
 		}
+		m.refreshProfiles()
 	case coreStarted:
 		if msg.err != nil {
 			m.action = "start core: " + simplifyError(msg.err)
@@ -245,7 +247,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Dashboard) restartStream() tea.Cmd {
+func (m *Dashboard) restartStream() tea.Cmd {
 	m.stopStream()
 	streamCtx, cancel := context.WithCancel(m.ctx)
 	m.streamCancel = cancel
@@ -346,7 +348,6 @@ func (m Dashboard) addProfile(content string) tea.Cmd {
 				err = errors.New("core is not running (press s) to validate the profile")
 			}
 		}
-		m.profiles = m.store.List()
 		return actionResult{action: "add profile", err: err}
 	}
 }
@@ -358,9 +359,7 @@ func (m Dashboard) activate() tea.Cmd {
 		}
 		id := m.profiles[m.profileCursor].ID
 		return func() tea.Msg {
-			err := m.store.SetActive(id)
-			m.profiles = m.store.List()
-			return actionResult{action: "activate profile", err: err}
+			return actionResult{action: "activate profile", err: m.store.SetActive(id)}
 		}
 	}
 	if m.pane == paneOutbounds {
@@ -396,15 +395,7 @@ func (m Dashboard) deleteProfile() tea.Cmd {
 	}
 	id := m.profiles[m.profileCursor].ID
 	return func() tea.Msg {
-		err := m.store.Delete(id)
-		m.profiles = m.store.List()
-		if m.profileCursor >= len(m.profiles) {
-			m.profileCursor = len(m.profiles) - 1
-		}
-		if m.profileCursor < 0 {
-			m.profileCursor = 0
-		}
-		return actionResult{action: "delete profile", err: err}
+		return actionResult{action: "delete profile", err: m.store.Delete(id)}
 	}
 }
 
@@ -454,6 +445,19 @@ func (m Dashboard) restart() tea.Cmd {
 func (m *Dashboard) request(action string) {
 	m.pending = action
 	m.pendingUntil = time.Now().Add(pendingTimeout)
+}
+
+// refreshProfiles reloads the profile list from the store and clamps the cursor.
+// Store mutations happen inside action commands on a value copy, so the model
+// re-reads the store here to keep the active marker and list current.
+func (m *Dashboard) refreshProfiles() {
+	m.profiles = m.store.List()
+	if m.profileCursor >= len(m.profiles) {
+		m.profileCursor = len(m.profiles) - 1
+	}
+	if m.profileCursor < 0 {
+		m.profileCursor = 0
+	}
 }
 
 // isConnectionAction reports whether an action result is already reflected in
@@ -959,15 +963,19 @@ func (m Dashboard) footerLine() string {
 		}
 		return "add profile > " + display + "  |  ctrl+d confirm"
 	}
-	coreState := "off"
+	corePart := "[s] core off"
 	if m.core != nil {
-		coreState = "on"
+		if m.spawned {
+			corePart = "[s] core on"
+		} else {
+			corePart = "core on (service)"
+		}
 	}
 	autostart := "off"
 	if m.store.AutoStart {
 		autostart = "on"
 	}
-	return "[s] core " + coreState + " | [A] autostart " + autostart + " | [r] restart | [tab] next | [j/k] move | [q] quit"
+	return corePart + " | [A] autostart " + autostart + " | [r] restart | [tab] next | [j/k] move | [q] quit"
 }
 
 func formatBytes(value int64) string {

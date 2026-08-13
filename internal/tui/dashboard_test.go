@@ -32,7 +32,7 @@ func TestDashboardRendersPanes(t *testing.T) {
 	model := newTestDashboard()
 	model.width, model.height = 100, 30
 	view := model.render()
-	for _, want := range []string{"profiles", "outbounds", "logs", "Home", "[c] ", "[s] core on"} {
+	for _, want := range []string{"profiles", "outbounds", "logs", "Home", "[c] ", "core on"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view does not contain %q:\n%s", want, view)
 		}
@@ -73,6 +73,33 @@ func TestDashboardActivatesProfile(t *testing.T) {
 	_ = updated
 	if store.ActiveID != "b" {
 		t.Fatalf("active profile = %q, want b", store.ActiveID)
+	}
+}
+
+func TestActivateProfileRefreshesList(t *testing.T) {
+	model := newTestDashboard()
+	store := model.store
+	store.Profiles = []profile.Profile{
+		{ID: "a", Name: "A", Kind: profile.KindLocal},
+		{ID: "b", Name: "B", Kind: profile.KindLocal},
+	}
+	store.ActiveID = "a"
+	model.profiles = store.List()
+	model.pane = paneProfiles
+	model.profileCursor = 1
+
+	_, command := model.Update(tea.KeyPressMsg(tea.Key{Text: "enter"}))
+	result := command().(actionResult)
+	settled, _ := model.Update(result)
+
+	active := ""
+	for _, p := range settled.(Dashboard).profiles {
+		if p.Active {
+			active = p.ID
+		}
+	}
+	if active != "b" {
+		t.Fatalf("active profile after activation = %q, want b", active)
 	}
 }
 
