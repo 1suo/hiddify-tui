@@ -523,7 +523,7 @@ func (m Dashboard) statusLine() string {
 	if profile == "" {
 		profile = "none"
 	}
-	line := fmt.Sprintf("state %s  profile %s  ↓ %s  ↑ %s  outbound %s",
+	line := fmt.Sprintf("state %s  running %s  ↓ %s  ↑ %s  outbound %s",
 		state, profile, formatBytes(m.snapshot.Downlink), formatBytes(m.snapshot.Uplink), valueOr(m.snapshot.CurrentOutbound, "none"))
 	if m.action != "" {
 		line += "  ·  " + m.action
@@ -533,7 +533,8 @@ func (m Dashboard) statusLine() string {
 
 func (m Dashboard) profileLines() ([]string, int) {
 	if len(m.profiles) == 0 {
-		return []string{"no profiles", "", "press a to add (paste a URL or config)"}, -1
+		lines := []string{"no profiles", "", "a add (paste URL or config)", "migrate gui to import from the GUI"}
+		return lines, -1
 	}
 	lines := make([]string, 0, len(m.profiles))
 	for _, profile := range m.profiles {
