@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"runtime"
 
 	controlv1 "github.com/1suo/hiddify-tui/gen/control/v1"
@@ -28,7 +30,14 @@ func DefaultSocket() string {
 	if runtime.GOOS == "darwin" {
 		return "/var/run/hiddify/control.sock"
 	}
-	return "/run/hiddify/control.sock"
+	system := "/run/hiddify/control.sock"
+	if _, err := os.Stat(system); err == nil {
+		return system
+	}
+	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
+		return filepath.Join(xdg, "hiddify", "control.sock")
+	}
+	return system
 }
 
 func DialUnix(ctx context.Context, socket string) (*GRPCClient, error) {
