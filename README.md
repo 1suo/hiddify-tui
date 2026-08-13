@@ -1,45 +1,57 @@
 # hiddify-tui
 
-`hiddify-tui` is a thin terminal client for a running
-[`hiddify-core`](https://github.com/hiddify/hiddify-core). It talks to the
-core's existing `Core` gRPC service over TCP (`127.0.0.1:17078`) and owns
-profiles client-side; it never embeds or starts the networking core.
+A terminal client for [`hiddify-core`](https://github.com/hiddify/hiddify-core).
+It drives the core's `Core` gRPC service (`127.0.0.1:17078`) and keeps profiles
+client-side — either attaching to an already-running core or spawning a headless
+one on demand.
 
-## Architecture
+## Install
 
-```text
-hiddify-tui ──gRPC (Core service)──► hiddify-core (GUI, or HiddifyCli run)
-             127.0.0.1:17078
+```sh
+# 1. build the clients
+make build                     # -> dist/hiddify-tui, dist/hiddify-migrate
+
+# 2. get the core (or point --core-binary at your own)
+./dist/hiddify-tui install-core
+
+# 3. (optional) system-wide install + auto-start service
+sudo ./packaging/linux/install.sh ./dist
 ```
-
-- **Connection / status / outbounds / logs / settings** come from the core's
-  `Core` gRPC service.
-- **Profiles** are stored client-side in `~/.local/share/hiddify/profiles.json`
-  and mirrored from the GUI's model: remote subscriptions (downloaded and
-  header-parsed) and local configs. The active profile's content is handed to
-  the core on connect via `Start(ConfigContent=...)`.
 
 ## Usage
 
-Run `hiddify-tui` in a terminal for the interactive dashboard (profiles,
-outbounds, and logs panes):
+Interactive dashboard:
 
 ```sh
-hiddify-tui                     # TUI, connecting to 127.0.0.1:17078
-hiddify-tui --address 127.0.0.1:17078
+hiddify-tui
 ```
+
+| Key | Action |
+|-----|--------|
+| `c` | connect / disconnect (press twice to confirm disconnect) |
+| `r` | restart connection |
+| `s` | start / stop the core |
+| `A` | toggle auto-start |
+| `tab` / `1` `2` `3` | switch pane |
+| `j`/`k` | move cursor |
+| `enter` | use selected profile / outbound |
+| `a` / `d` | add / delete profile (profiles pane) |
+| `t` | test outbound (outbounds pane) |
+| `q` | quit |
 
 Scriptable CLI:
 
 ```sh
 hiddify-tui status
 hiddify-tui --json status
+hiddify-tui connect | disconnect | restart
 hiddify-tui profile add https://sub.example.com/…
-hiddify-tui profile add-file /path/to/config.json
+hiddify-tui profile add-file /path/config.json
 hiddify-tui profile activate <id>
-hiddify-tui connect
-hiddify-tui outbound list
+hiddify-tui outbound list | select <group> <out> | test <out>
 hiddify-tui logs --level warn
+hiddify-tui settings validate /path/settings.json
+hiddify-tui migrate gui --database … --configs … --apply
 ```
 
 Exit codes: `0` success, `2` usage, `3` core unavailable, `4` rejected.
@@ -51,5 +63,5 @@ go build ./...
 go test ./...
 ```
 
-The core protocol schemas are vendored from `hiddify-core`
-(`proto/hcore`, `proto/hcommon`) and generated with `buf` into `gen/`.
+Core protocol schemas are vendored from `hiddify-core` (`proto/hcore`,
+`proto/hcommon`) and generated with `buf` into `gen/`.
