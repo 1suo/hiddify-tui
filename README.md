@@ -10,13 +10,19 @@ demand.
 ### Linux
 
 ```sh
-make build                          # builds the client, migration tool, and daemon
-sudo ./packaging/linux/install.sh ./dist
+curl -fsSL https://raw.githubusercontent.com/1suo/hiddify-tui/main/install.sh | sudo bash
 ```
 
-Installs the standalone core as a `hiddify-core.service` systemd unit. It starts
-the service only when port 17078 is free; an existing VPN/core is never stopped
-or restarted. The Hiddify GUI is not required.
+Downloads and verifies the latest release, then installs the client and the
+standalone core as a `hiddify-core.service` systemd unit. The Hiddify GUI is not
+required. To install a specific release, set `HIDDIFY_TUI_VERSION`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/1suo/hiddify-tui/main/install.sh | \
+  sudo env HIDDIFY_TUI_VERSION=v0.1.0 bash
+```
+
+For client-only installation, download the deb/rpm package from GitHub Releases.
 
 ### macOS
 

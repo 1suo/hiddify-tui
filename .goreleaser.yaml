@@ -68,8 +68,12 @@ archives:
     files:
       - README.md
       - LICENSE
+      - install.sh
       - docs/man/hiddify-tui.1
       - completions/*
+      - packaging/linux/install.sh
+      - packaging/linux/uninstall.sh
+      - packaging/systemd/hiddify-core.service
 
 checksum:
   name_template: checksums.txt
