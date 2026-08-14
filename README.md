@@ -41,11 +41,13 @@ existing compatible core, such as the GUI's.
 
 ```powershell
 # from an elevated PowerShell
-.\packaging\windows\install.ps1 -BuildDir .\dist
+irm https://raw.githubusercontent.com/1suo/hiddify-tui/main/install.ps1 | iex
 ```
 
-Installs the client on `PATH`. A supplied standalone core can be used directly;
-official releases do not currently publish one for Windows.
+Downloads and verifies the client and official Windows x64 core runtime, puts
+the client on `PATH`, and runs the headless core through a SYSTEM startup task.
+The Hiddify GUI is not required. The core is downloaded unmodified and remains
+under its upstream license.
 
 Prebuilt archives and deb/rpm packages are published with GitHub releases.
 Release assets also contain rendered AUR, Homebrew, Scoop, Winget, and Nix

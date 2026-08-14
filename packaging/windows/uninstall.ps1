@@ -21,7 +21,8 @@ if (Get-Service -Name "hiddify-core" -ErrorAction SilentlyContinue) {
 
 Remove-Item -Force -Path "$BinDir\hiddify-tui.exe", "$BinDir\hiddify-migrate.exe" `
     -ErrorAction SilentlyContinue
-Remove-Item -Force -Path "$InstallDir\hiddify-core.exe", "$InstallDir\hiddify-core-daemon.exe" `
+Remove-Item -Force -Path "$InstallDir\hiddify-core-host.exe", "$InstallDir\hiddify-core-daemon.exe", `
+    "$InstallDir\hiddify-core.dll", "$InstallDir\libcronet.dll", "$InstallDir\uninstall.ps1" `
     -ErrorAction SilentlyContinue
 if (Test-Path $BinDir) {
     Remove-Item -Path $BinDir -ErrorAction SilentlyContinue

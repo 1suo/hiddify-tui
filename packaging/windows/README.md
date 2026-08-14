@@ -1,21 +1,29 @@
 # Windows packaging
 
-`hiddify-tui` is a client of the Hiddify core. On Windows the core ships inside
-the Hiddify GUI (serves Core gRPC at `127.0.0.1:17078`); there is no standalone
-Windows core in the official releases, so the TUI normally attaches to the
-GUI's core.
+The one-command installer downloads the TUI release plus the official
+`hiddify-core.dll` Windows runtime, verifies both, and installs a small host for
+the DLL. A SYSTEM startup task keeps its gRPC service available at
+`127.0.0.1:17078`, independently of a terminal or the Hiddify GUI.
 
-`install.ps1` installs the client (and puts it on `PATH`). If standalone
-`hiddify-core.exe` and `hiddify-core-daemon.exe` binaries are placed in the
-build dir, it also creates a SYSTEM startup task and starts it only if port
-17078 is free. An existing core/VPN is left untouched. This keeps the optional
-standalone core independent of both the terminal and GUI.
+From an elevated PowerShell:
 
 ```powershell
-# from an elevated PowerShell
-.\packaging\windows\install.ps1 -BuildDir .\dist
-.\packaging\windows\uninstall.ps1
+irm https://raw.githubusercontent.com/1suo/hiddify-tui/main/install.ps1 | iex
 ```
+
+The task starts only when port 17078 is free; an existing core/VPN is left
+untouched. The official core currently provides a Windows x64 runtime only.
+The installer fetches the unmodified core from its official v4.1.0 release;
+that component remains covered by the upstream GPLv3-derived license.
+
+Uninstall from an elevated PowerShell:
+
+```powershell
+& "$env:ProgramData\hiddify-tui\uninstall.ps1"
+```
+
+For a local build, place `hiddify-core.dll` and `libcronet.dll` beside the four
+executables in `dist`, then run `packaging\windows\install.ps1 -BuildDir dist`.
 
 Build the Windows binary first (from Linux or Windows):
 
@@ -23,4 +31,5 @@ Build the Windows binary first (from Linux or Windows):
 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o dist/hiddify-tui.exe ./cmd/hiddify-tui
 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o dist/hiddify-migrate.exe ./cmd/hiddify-migrate
 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o dist/hiddify-core-daemon.exe ./cmd/hiddify-core-daemon
+GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o dist/hiddify-core-host.exe ./cmd/hiddify-core-host
 ```

@@ -3,6 +3,11 @@
 Audited source: [`hiddify/hiddify-core`](https://github.com/hiddify/hiddify-core)
 commit `db74dfc257d5becb4b4e9dbc7257a3dcdde20692` (2026-08-12).
 
+Windows releases host the official v4.1.0 `hiddify-core.dll` through its
+exported `setup` and `start` C API. The host uses
+`SetupMode_GRPC_NORMAL_INSECURE` (3), matching the desktop application's local
+gRPC mode.
+
 `hiddify-tui` is a client of the core's existing `Core` gRPC service, served at
 `127.0.0.1:17078` in the insecure modes (`SetupMode_GRPC_*_INSECURE`) that the
 GUI and `HiddifyCli run` use.

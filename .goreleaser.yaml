@@ -51,12 +51,26 @@ builds:
       - -s -w
     mod_timestamp: "{{ .CommitTimestamp }}"
 
+  - id: hiddify-core-host
+    main: ./cmd/hiddify-core-host
+    binary: hiddify-core-host
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
 archives:
   - id: default
     ids:
       - hiddify-tui
       - hiddify-migrate
       - hiddify-core-daemon
+      - hiddify-core-host
     formats:
       - tar.gz
     format_overrides:
@@ -74,6 +88,9 @@ archives:
       - packaging/linux/install.sh
       - packaging/linux/uninstall.sh
       - packaging/systemd/hiddify-core.service
+      - install.ps1
+      - packaging/windows/install.ps1
+      - packaging/windows/uninstall.ps1
 
 checksum:
   name_template: checksums.txt

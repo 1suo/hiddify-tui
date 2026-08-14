@@ -46,6 +46,7 @@ jobs:
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags='-s -w' -o "dist/hiddify-migrate-${goos}-${goarch}${suffix}" ./cmd/hiddify-migrate
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags='-s -w' -o "dist/hiddify-core-daemon-${goos}-${goarch}${suffix}" ./cmd/hiddify-core-daemon
           done
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o dist/hiddify-core-host-windows-amd64.exe ./cmd/hiddify-core-host
           for f in dist/*; do
             printf '%s %s bytes  gzip %s bytes\n' "$(basename "$f")" "$(wc -c < "$f")" "$(gzip -c "$f" | wc -c)"
           done
@@ -64,3 +65,40 @@ jobs:
           bash -n packaging/linux/*.sh packaging/macos/*.sh packaging/nfpm/*.sh
           bash -n packaging/aur/PKGBUILD.tmpl
           jq -e . packaging/scoop/hiddify-tui.json.tmpl
+
+  windows-core-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.25.12
+      - name: Build host and fetch official core
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist | Out-Null
+          go build -trimpath -ldflags='-s -w' -o dist/hiddify-core-host.exe ./cmd/hiddify-core-host
+          Invoke-WebRequest https://github.com/hiddify/hiddify-core/releases/download/v4.1.0/hiddify-lib-windows-amd64.tar.gz -OutFile dist/core.tar.gz
+          if ((Get-FileHash dist/core.tar.gz -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'fc610e67d9fdf23da7cc10633f38806d7081a1c120157d1fbe5ac8cc41b315b4') { throw 'core checksum mismatch' }
+          tar.exe -xzf dist/core.tar.gz -C dist
+      - name: Start DLL host and verify gRPC listener
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath "$pwd\dist\hiddify-core-host.exe" -ArgumentList 'serve', '-D', "$pwd\dist\state" -PassThru
+          try {
+            $listening = $false
+            foreach ($attempt in 1..50) {
+              if ($process.HasExited) { throw "host exited with code $($process.ExitCode)" }
+              try {
+                $client = [Net.Sockets.TcpClient]::new('127.0.0.1', 17078)
+                $client.Dispose()
+                $listening = $true
+                break
+              } catch {
+                Start-Sleep -Milliseconds 200
+              }
+            }
+            if (-not $listening) { throw 'gRPC listener did not start' }
+          } finally {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          }
