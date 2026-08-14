@@ -37,17 +37,30 @@ jobs:
       - name: Build release targets and enforce binary budget
         run: |
           mkdir -p dist
-          for target in linux/amd64 darwin/amd64 darwin/arm64 windows/amd64; do
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
             goos=${target%/*}
             goarch=${target#*/}
             suffix=""
             if [ "$goos" = windows ]; then suffix=.exe; fi
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags='-s -w' -o "dist/hiddify-tui-${goos}-${goarch}${suffix}" ./cmd/hiddify-tui
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags='-s -w' -o "dist/hiddify-migrate-${goos}-${goarch}${suffix}" ./cmd/hiddify-migrate
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags='-s -w' -o "dist/hiddify-core-daemon-${goos}-${goarch}${suffix}" ./cmd/hiddify-core-daemon
           done
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o dist/hiddify-migrate-linux-amd64 ./cmd/hiddify-migrate
           for f in dist/*; do
             printf '%s %s bytes  gzip %s bytes\n' "$(basename "$f")" "$(wc -c < "$f")" "$(gzip -c "$f" | wc -c)"
           done
           # Investigate threshold documented in TODO.md: tui > 20 MiB.
           size=$(wc -c < dist/hiddify-tui-linux-amd64)
           test "$size" -le 20971520 || { echo "hiddify-tui exceeds 20 MiB investigate threshold: $size bytes"; exit 1; }
+      - name: Validate release configuration
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: check
+      - name: Validate packaging assets
+        run: |
+          bash -n scripts/release.sh scripts/render-package-manifests.sh
+          bash -n packaging/linux/*.sh packaging/macos/*.sh packaging/nfpm/*.sh
+          bash -n packaging/aur/PKGBUILD.tmpl
+          jq -e . packaging/scoop/hiddify-tui.json.tmpl

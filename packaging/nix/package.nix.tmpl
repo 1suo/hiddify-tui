@@ -1,0 +1,46 @@
+{ lib, stdenv, fetchurl }:
+
+let
+  artifacts = {
+    "x86_64-linux" = {
+      url = "https://github.com/1suo/hiddify-tui/releases/download/v@VERSION@/hiddify-tui_@VERSION@_linux_amd64.tar.gz";
+      hash = "sha256-@SRI_LINUX_AMD64@";
+    };
+    "aarch64-linux" = {
+      url = "https://github.com/1suo/hiddify-tui/releases/download/v@VERSION@/hiddify-tui_@VERSION@_linux_arm64.tar.gz";
+      hash = "sha256-@SRI_LINUX_ARM64@";
+    };
+    "x86_64-darwin" = {
+      url = "https://github.com/1suo/hiddify-tui/releases/download/v@VERSION@/hiddify-tui_@VERSION@_darwin_amd64.tar.gz";
+      hash = "sha256-@SRI_DARWIN_AMD64@";
+    };
+    "aarch64-darwin" = {
+      url = "https://github.com/1suo/hiddify-tui/releases/download/v@VERSION@/hiddify-tui_@VERSION@_darwin_arm64.tar.gz";
+      hash = "sha256-@SRI_DARWIN_ARM64@";
+    };
+  };
+  artifact = artifacts.${stdenv.hostPlatform.system};
+in stdenv.mkDerivation {
+  pname = "hiddify-tui";
+  version = "@VERSION@";
+  src = fetchurl artifact;
+  sourceRoot = ".";
+
+  installPhase = ''
+    install -Dm755 hiddify-tui $out/bin/hiddify-tui
+    install -Dm755 hiddify-migrate $out/bin/hiddify-migrate
+    install -Dm644 LICENSE $out/share/licenses/hiddify-tui/LICENSE
+    install -Dm644 docs/man/hiddify-tui.1 $out/share/man/man1/hiddify-tui.1
+    install -Dm644 completions/hiddify-tui.bash $out/share/bash-completion/completions/hiddify-tui
+    install -Dm644 completions/_hiddify-tui $out/share/zsh/site-functions/_hiddify-tui
+    install -Dm644 completions/hiddify-tui.fish $out/share/fish/vendor_completions.d/hiddify-tui.fish
+  '';
+
+  meta = {
+    description = "Terminal client for hiddify-core";
+    homepage = "https://github.com/1suo/hiddify-tui";
+    license = lib.licenses.mit;
+    mainProgram = "hiddify-tui";
+    platforms = builtins.attrNames artifacts;
+  };
+}

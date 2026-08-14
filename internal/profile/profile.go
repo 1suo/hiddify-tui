@@ -47,7 +47,8 @@ type Profile struct {
 }
 
 // Store is the on-disk profile list. ActiveID selects which profile the client
-// connects. AutoStart opts into starting the core and connecting on TUI launch.
+// connects. AutoStart is retained in the file format and means auto-connect on
+// TUI launch; the headless core itself starts whenever it is available.
 type Store struct {
 	Path      string    `json:"-"`
 	ActiveID  string    `json:"active_id"`
@@ -183,7 +184,7 @@ func (s *Store) Update(profile Profile) error {
 	return fmt.Errorf("profile %q not found", profile.ID)
 }
 
-// ToggleAutoStart flips the auto-start preference and persists it.
+// ToggleAutoStart flips the auto-connect preference and persists it.
 func (s *Store) ToggleAutoStart() error {
 	s.AutoStart = !s.AutoStart
 	return s.Save()

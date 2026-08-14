@@ -8,17 +8,14 @@ import (
 	"time"
 )
 
-// TestLauncherSpawnsAndStops verifies the process lifecycle with a fake core
-// binary that blocks until signalled. The dial always fails because the fake
-// serves no gRPC, but the spawn and stop must still work.
-func TestLauncherSpawnsAndStops(t *testing.T) {
+// TestLauncherRefusesCustomAddress verifies that the fixed-address standalone
+// core is never spawned when it could not serve the requested endpoint.
+func TestLauncherRefusesCustomAddress(t *testing.T) {
 	dir := t.TempDir()
 	started := filepath.Join(dir, "started")
-	stopped := filepath.Join(dir, "stopped")
 	script := "#!/bin/sh\n" +
 		"if [ \"$1\" = \"run\" ]; then\n" +
 		"  echo ok > \"" + started + "\"\n" +
-		"  trap 'echo ok > \"" + stopped + "\"; exit 0' INT TERM\n" +
 		"  while :; do sleep 0.1; done\n" +
 		"fi\n"
 	binary := filepath.Join(dir, "fake-core")
@@ -26,30 +23,19 @@ func TestLauncherSpawnsAndStops(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	launcher := NewLauncher(binary)
+	launcher := NewLauncher(binary).SetStateDir(filepath.Join(dir, "state"))
 	ctx := context.Background()
-	core, err := launcher.Start(ctx, "127.0.0.1:1", "", 1*time.Second)
+	core, err := launcher.Start(ctx, "127.0.0.1:17079", "", 1*time.Second)
 	if err == nil {
 		t.Fatal("expected dial to fail against a fake that serves no gRPC")
 	}
 	if core != nil {
 		t.Fatal("Start should return a nil client when dial fails")
 	}
-	if !launcher.Spawned() {
-		t.Fatal("Start should spawn the core")
+	if _, err := os.Stat(started); !os.IsNotExist(err) {
+		t.Fatalf("fake core must not be spawned for a custom address: %v", err)
 	}
-	if _, err := os.Stat(started); err != nil {
-		t.Fatalf("fake core was not spawned: %v", err)
+	if launcher.Spawned() {
+		t.Fatal("refused Start must not spawn the core")
 	}
-
-	launcher.Stop()
-
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(stopped); err == nil {
-			return
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	t.Fatal("Stop did not terminate the fake core")
 }

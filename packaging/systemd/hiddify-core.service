@@ -4,10 +4,11 @@ Documentation=https://github.com/1suo/hiddify-tui
 Wants=network-online.target
 After=network-online.target
 ConditionPathIsExecutable=/usr/lib/hiddify/hiddify-core
+ConditionPathIsExecutable=/usr/lib/hiddify/hiddify-core-daemon
 
 [Service]
 Type=simple
-ExecStart=/usr/lib/hiddify/hiddify-core run -c /etc/hiddify/active-config.json
+ExecStart=/usr/lib/hiddify/hiddify-core-daemon --core-binary /usr/lib/hiddify/hiddify-core --state-dir /var/lib/hiddify
 Restart=on-failure
 RestartSec=2s
 TimeoutStopSec=20s
@@ -16,6 +17,8 @@ PrivateTmp=true
 ProtectSystem=full
 LockPersonality=true
 RestrictSUIDSGID=true
+Environment=LD_LIBRARY_PATH=/usr/lib/hiddify
+StateDirectory=hiddify
 
 [Install]
 WantedBy=multi-user.target

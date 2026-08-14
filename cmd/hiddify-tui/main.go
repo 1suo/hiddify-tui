@@ -29,8 +29,12 @@ func main() {
 			fmt.Fprintf(os.Stderr, "profiles: %v\n", storeErr)
 			os.Exit(cli.ExitRejected)
 		}
-		launcher := core.NewLauncher(coreBinary)
-		// Attach to an already-running core only; never auto-start here.
+		var launcher *core.Launcher
+		if address == client.DefaultAddress {
+			launcher = core.NewLauncher(coreBinary)
+		}
+		// Attach first. The dashboard may start a standalone core only after its
+		// occupied-address guard confirms that no existing core owns the port.
 		var coreIface client.Client
 		if dialed, dialErr := core.Dial(context.Background(), address, 500*time.Millisecond); dialErr == nil {
 			coreIface = dialed
@@ -39,9 +43,6 @@ func main() {
 		if err := tui.RunWithOptions(coreIface, store, launcher, address, timeout, noColor); err != nil {
 			fmt.Fprintf(os.Stderr, "tui: %v\n", err)
 			os.Exit(cli.ExitRejected)
-		}
-		if launcher.Spawned() {
-			launcher.Stop()
 		}
 		return
 	}
@@ -74,6 +75,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	address := flags.String("address", client.DefaultAddress, "core gRPC address")
 	timeout := flags.Duration("timeout", 3*time.Second, "core request timeout")
 	profileFile := flags.String("profile-file", profile.DefaultPath(), "client profile store path")
+	coreBinary := flags.String("core-binary", "", "path to the hiddify-core binary (default: hiddify-core on PATH)")
 	showVersion := flags.Bool("version", false, "print version")
 	_ = flags.Bool("no-color", false, "disable terminal colors")
 	if err := flags.Parse(args); err != nil {
@@ -100,31 +102,31 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// Commands that do not need a live core.
 	switch command {
 	case "profile":
-		return runProfile(remaining, store, *jsonOutput, stdout, stderr)
+		return runProfile(remaining, store, *address, *coreBinary, *timeout, *jsonOutput, stdout, stderr)
 	case "migrate":
 		return runGUIMigration(remaining, store, stdout, stderr)
 	case "install-core":
 		return runInstallCore(stdout, stderr)
 	}
 
-	core, err := cli.Dial(*address, *timeout)
+	coreClient, err := openCore(*address, *coreBinary, *timeout)
 	if err != nil {
 		cli.WriteError(stderr, command, err)
 		return cli.ExitUnavailable
 	}
-	defer core.Close()
+	defer coreClient.Close()
 
 	switch command {
 	case "status":
-		return runStatus(remaining, core, *jsonOutput, stdout, stderr)
+		return runStatus(remaining, coreClient, *jsonOutput, stdout, stderr)
 	case "connect", "disconnect", "restart":
-		return runConnection(remaining, core, store, *jsonOutput, stdout, stderr)
+		return runConnection(remaining, coreClient, store, *jsonOutput, stdout, stderr)
 	case "outbound":
-		return runOutbound(remaining, core, *jsonOutput, stdout, stderr)
+		return runOutbound(remaining, coreClient, *jsonOutput, stdout, stderr)
 	case "logs":
-		return runLogs(remaining, core, *jsonOutput, stdout, stderr)
+		return runLogs(remaining, coreClient, *jsonOutput, stdout, stderr)
 	case "settings":
-		return runSettings(remaining, core, stdout, stderr)
+		return runSettings(remaining, coreClient, stdout, stderr)
 	default:
 		fmt.Fprintln(stderr, "usage: hiddify-tui [--json] status")
 		return cli.ExitUsage
@@ -218,7 +220,7 @@ func runSettings(args []string, core client.Client, stdout, stderr io.Writer) in
 	return settingsUsage(stderr)
 }
 
-func runProfile(args []string, store *profile.Store, jsonOutput bool, stdout, stderr io.Writer) int {
+func runProfile(args []string, store *profile.Store, address, coreBinary string, timeout time.Duration, jsonOutput bool, stdout, stderr io.Writer) int {
 	if len(args) < 2 {
 		return profileUsage(stderr)
 	}
@@ -252,12 +254,12 @@ func runProfile(args []string, store *profile.Store, jsonOutput bool, stdout, st
 		return cli.ProfileDelete(store, args[2], jsonOutput, stdout, stderr)
 	}
 	// Commands that need a live core (add/refresh validate via Parse).
-	core, err := cli.Dial(client.DefaultAddress, 10*time.Second)
+	coreClient, err := openCore(address, coreBinary, timeout)
 	if err != nil {
 		cli.WriteError(stderr, "profile "+command, err)
 		return cli.ExitUnavailable
 	}
-	defer core.Close()
+	defer coreClient.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	switch command {
@@ -269,7 +271,7 @@ func runProfile(args []string, store *profile.Store, jsonOutput bool, stdout, st
 		if err := flags.Parse(args[2:]); err != nil || flags.NArg() != 1 {
 			return profileUsage(stderr)
 		}
-		return cli.ProfileAddRemote(ctx, core, store, flags.Arg(0), *name, *active, jsonOutput, stdout, stderr)
+		return cli.ProfileAddRemote(ctx, coreClient, store, flags.Arg(0), *name, *active, jsonOutput, stdout, stderr)
 	case "add-file", "add-stdin":
 		flags := flag.NewFlagSet("profile "+command, flag.ContinueOnError)
 		flags.SetOutput(stderr)
@@ -296,15 +298,34 @@ func runProfile(args []string, store *profile.Store, jsonOutput bool, stdout, st
 			cli.WriteError(stderr, "profile "+command, err)
 			return cli.ExitRejected
 		}
-		return cli.ProfileAddLocal(ctx, core, store, string(data), *name, *active, jsonOutput, stdout, stderr)
+		return cli.ProfileAddLocal(ctx, coreClient, store, string(data), *name, *active, jsonOutput, stdout, stderr)
 	case "refresh":
 		if len(args) != 3 {
 			return profileUsage(stderr)
 		}
-		return cli.ProfileRefresh(ctx, core, store, args[2], jsonOutput, stdout, stderr)
+		return cli.ProfileRefresh(ctx, coreClient, store, args[2], jsonOutput, stdout, stderr)
 	default:
 		return profileUsage(stderr)
 	}
+}
+
+func openCore(address, binary string, timeout time.Duration) (*client.GRPCClient, error) {
+	coreClient, dialErr := core.Dial(context.Background(), address, timeout)
+	if dialErr == nil {
+		return coreClient, nil
+	}
+	if address != client.DefaultAddress {
+		return nil, fmt.Errorf("core unavailable at custom address %s: %w", address, dialErr)
+	}
+	launcher := core.NewLauncher(binary)
+	if !launcher.Available() {
+		return nil, fmt.Errorf("core unavailable and hiddify-core binary not found; run `hiddify-tui install-core` or set --core-binary")
+	}
+	startTimeout := timeout
+	if startTimeout < 10*time.Second {
+		startTimeout = 10 * time.Second
+	}
+	return launcher.Start(context.Background(), address, core.BootstrapConfig, startTimeout)
 }
 
 func runGUIMigration(args []string, store *profile.Store, stdout, stderr io.Writer) int {

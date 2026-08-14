@@ -10,11 +10,13 @@ demand.
 ### Linux
 
 ```sh
-make build                          # -> dist/hiddify-tui, dist/hiddify-migrate
+make build                          # builds the client, migration tool, and daemon
 sudo ./packaging/linux/install.sh ./dist
 ```
 
-Installs the client and the core as a `hiddify-core.service` systemd unit.
+Installs the standalone core as a `hiddify-core.service` systemd unit. It starts
+the service only when port 17078 is free; an existing VPN/core is never stopped
+or restarted. The Hiddify GUI is not required.
 
 ### macOS
 
@@ -24,8 +26,10 @@ GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o dist/hiddify-tui
 sudo ./packaging/macos/install.sh ./dist
 ```
 
-Installs to `/usr/local/bin`; attaches to the GUI's core (or a standalone core
-via a root LaunchDaemon).
+Installs to `/usr/local/bin`. Official releases do not currently include a
+standalone macOS core; when one is supplied in `dist`, the installer runs it
+through the included headless daemon. Otherwise the TUI can only attach to an
+existing compatible core, such as the GUI's.
 
 ### Windows
 
@@ -34,10 +38,12 @@ via a root LaunchDaemon).
 .\packaging\windows\install.ps1 -BuildDir .\dist
 ```
 
-Installs the client on `PATH`; optionally registers a headless core service.
+Installs the client on `PATH`. A supplied standalone core can be used directly;
+official releases do not currently publish one for Windows.
 
-> Prebuilt binaries are published with GitHub releases. Package-manager
-> packages (AUR, Homebrew, Scoop) are welcome contributions.
+Prebuilt archives and deb/rpm packages are published with GitHub releases.
+Release assets also contain rendered AUR, Homebrew, Scoop, Winget, and Nix
+manifests. See [docs/packaging.md](docs/packaging.md) for publication details.
 
 ## Usage
 
@@ -57,3 +63,7 @@ go test ./...
 
 Core protocol schemas are vendored from `hiddify-core` (`proto/hcore`,
 `proto/hcommon`) and generated with `buf` into `gen/`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

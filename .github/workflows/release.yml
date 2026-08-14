@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   goreleaser:
@@ -18,10 +20,22 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25.12'
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: anchore/sbom-action/download-syft@v0
+      - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: '~> v2'
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Render package-manager manifests
+        run: |
+          scripts/render-package-manifests.sh "${GITHUB_REF_NAME}" dist/checksums.txt
+          tar -C dist/package-manifests -czf dist/package-manifests.tar.gz .
+          sha256sum dist/package-manifests.tar.gz | sed 's#dist/##' >> dist/checksums.txt
+          gh release upload "${GITHUB_REF_NAME}" dist/package-manifests.tar.gz dist/checksums.txt --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-checksums: dist/checksums.txt

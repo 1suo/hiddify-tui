@@ -5,8 +5,7 @@
 #   VERSION defaults to the value of `git describe --tags --always`.
 #
 # Outputs into dist/:
-#   hiddify-tui-<os>-<arch>[.exe]
-#   hiddify-migrate-linux-amd64
+#   <binary>-<os>-<arch>[.exe] for all supported targets
 #   checksums.txt          (SHA-256 for every artifact)
 #   sbom/                  (go version -m module manifests per artifact)
 
@@ -27,13 +26,13 @@ build() {
     go version -m "$out" > "dist/sbom/${bin}-${goos}-${goarch}.sbom"
 }
 
-for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
     goos="${target%/*}"
     goarch="${target#*/}"
     build hiddify-tui ./cmd/hiddify-tui "$goos" "$goarch"
+    build hiddify-migrate ./cmd/hiddify-migrate "$goos" "$goarch"
+    build hiddify-core-daemon ./cmd/hiddify-core-daemon "$goos" "$goarch"
 done
-
-build hiddify-migrate ./cmd/hiddify-migrate linux amd64
 
 (cd dist && find . -maxdepth 1 -type f -printf '%f\n' | sort | xargs sha256sum > checksums.txt)
 

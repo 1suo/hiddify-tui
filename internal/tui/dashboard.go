@@ -108,7 +108,7 @@ func NewDashboard(core client.Client, store *profile.Store, err error) Dashboard
 
 func (m Dashboard) Init() tea.Cmd {
 	cmd := waitForStream(m.updates)
-	if m.core == nil && m.store.AutoStart {
+	if m.core == nil && m.launcherAvailable() {
 		return tea.Batch(cmd, m.startCore())
 	}
 	return cmd
@@ -143,7 +143,7 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pane == paneProfiles {
 				m.adding = true
 				m.input = ""
-				return m, m.readClipboardCmd(false)
+				return m, nil
 			}
 		case "d":
 			if m.pane == paneProfiles {
@@ -179,13 +179,11 @@ func (m Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.confirmDisconnect = false
 	case tea.PasteMsg:
 		if m.adding {
-			m.input += msg.Content
+			m.appendInput(msg.Content, false)
 		}
 	case clipboardMsg:
-		if m.adding {
-			if msg.replace || m.input == "" {
-				m.input = msg.content
-			}
+		if m.adding && msg.content != "" && (msg.replace || m.input == "") {
+			m.appendInput(msg.content, msg.replace)
 		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -282,7 +280,7 @@ func (m Dashboard) startCore() tea.Cmd {
 		if err != nil {
 			return coreStarted{err: err}
 		}
-		if active, ok := m.store.Active(); ok {
+		if active, ok := m.store.Active(); ok && m.store.AutoStart {
 			_ = coreClient.Connect(m.ctx, active.Content, active.Name)
 		}
 		return coreStarted{core: coreClient, spawned: true}
@@ -299,7 +297,7 @@ func (m Dashboard) stopCore() tea.Cmd {
 func (m Dashboard) toggleAutoStart() tea.Cmd {
 	return func() tea.Msg {
 		err := m.store.ToggleAutoStart()
-		return actionResult{action: "auto-start", err: err}
+		return actionResult{action: "auto-connect", err: err}
 	}
 }
 
@@ -323,10 +321,22 @@ func (m Dashboard) inputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	default:
 		if msg.Text != "" {
-			m.input += msg.Text
+			m.appendInput(msg.Text, false)
 		}
 	}
 	return m, nil
+}
+
+func (m *Dashboard) appendInput(value string, replace bool) {
+	candidate := m.input + value
+	if replace {
+		candidate = value
+	}
+	if len(candidate) > maxClipboardBytes {
+		m.action = "paste rejected: input exceeds 8 MiB"
+		return
+	}
+	m.input = candidate
 }
 
 // readClipboardCmd reads the system clipboard asynchronously. replace forces
@@ -424,7 +434,9 @@ func (m Dashboard) deleteProfile() tea.Cmd {
 
 func (m Dashboard) connect() tea.Cmd {
 	if m.core == nil {
-		return func() tea.Msg { return actionResult{action: "connect", err: errors.New("core is not running (press s)")} }
+		return func() tea.Msg {
+			return actionResult{action: "connect", err: errors.New("core is not running (press s)")}
+		}
 	}
 	target, ok := m.store.Active()
 	if !ok {
@@ -450,7 +462,9 @@ func (m Dashboard) disconnect() tea.Cmd {
 
 func (m Dashboard) restart() tea.Cmd {
 	if m.core == nil {
-		return func() tea.Msg { return actionResult{action: "restart", err: errors.New("core is not running (press s)")} }
+		return func() tea.Msg {
+			return actionResult{action: "restart", err: errors.New("core is not running (press s)")}
+		}
 	}
 	target, ok := m.store.Active()
 	if !ok {
@@ -998,7 +1012,7 @@ func (m Dashboard) footerLine() string {
 	if m.store.AutoStart {
 		autostart = "on"
 	}
-	return corePart + " | [A] autostart " + autostart + " | [r] restart | [tab] next | [j/k] move | [q] quit"
+	return corePart + " | [A] auto-connect " + autostart + " | [r] restart | [tab] next | [j/k] move | [q] quit"
 }
 
 func formatBytes(value int64) string {

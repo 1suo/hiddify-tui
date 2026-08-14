@@ -1,17 +1,30 @@
 # Operations guide
 
-`hiddify-tui` is a client of a running `hiddify-core`. It never owns the VPN
-process: exiting or killing the TUI does not disconnect an active connection;
-stopping the core does.
+`hiddify-tui` is a client of a running `hiddify-core`. Exiting or killing the
+TUI does not disconnect an active connection. A core started on demand remains
+alive, and packaged Linux installations use a persistent system service.
 
-## Prerequisite: a running core
+## Headless core
 
 The TUI connects to the core's `Core` gRPC service at `127.0.0.1:17078`
-(insecure). Run the core one of these ways:
+(insecure). It first attaches to an existing core. If none is running and a
+standalone `hiddify-core` binary is installed, the TUI and CLI start it without
+the GUI. Recommended Linux setup:
 
-- the Hiddify GUI (its core already listens there), or
-- headless: `hiddify-core run -c /path/to/config.json`, or
-- the packaged `hiddify-core.service` (`packaging/`).
+```sh
+make build
+sudo ./packaging/linux/install.sh ./dist
+```
+
+Other supported arrangements are:
+
+- an explicitly supplied binary through `--core-binary`, or
+- any compatible external core already listening at `--address`.
+
+`hiddify-tui install-core` installs the official standalone Linux core for the
+current user. Official upstream releases currently provide standalone CLI
+artifacts only for Linux; macOS and Windows require a separately supplied core
+or an existing compatible process.
 
 ## Profiles
 

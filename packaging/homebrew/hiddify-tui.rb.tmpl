@@ -1,0 +1,41 @@
+class HiddifyTui < Formula
+  desc "Terminal client for hiddify-core"
+  homepage "https://github.com/1suo/hiddify-tui"
+  license "MIT"
+  version "@VERSION@"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/1suo/hiddify-tui/releases/download/v@VERSION@/hiddify-tui_@VERSION@_darwin_arm64.tar.gz"
+      sha256 "@SHA_DARWIN_ARM64@"
+    end
+    on_intel do
+      url "https://github.com/1suo/hiddify-tui/releases/download/v@VERSION@/hiddify-tui_@VERSION@_darwin_amd64.tar.gz"
+      sha256 "@SHA_DARWIN_AMD64@"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/1suo/hiddify-tui/releases/download/v@VERSION@/hiddify-tui_@VERSION@_linux_arm64.tar.gz"
+      sha256 "@SHA_LINUX_ARM64@"
+    end
+    on_intel do
+      url "https://github.com/1suo/hiddify-tui/releases/download/v@VERSION@/hiddify-tui_@VERSION@_linux_amd64.tar.gz"
+      sha256 "@SHA_LINUX_AMD64@"
+    end
+  end
+
+  def install
+    bin.install "hiddify-tui", "hiddify-migrate"
+    prefix.install "LICENSE"
+    man1.install "docs/man/hiddify-tui.1"
+    bash_completion.install "completions/hiddify-tui.bash" => "hiddify-tui"
+    zsh_completion.install "completions/_hiddify-tui"
+    fish_completion.install "completions/hiddify-tui.fish"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/hiddify-tui --version")
+  end
+end

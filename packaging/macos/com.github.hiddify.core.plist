@@ -6,10 +6,11 @@
     <string>com.github.hiddify.core</string>
     <key>ProgramArguments</key>
     <array>
+        <string>/Library/Application Support/Hiddify/hiddify-core-daemon</string>
+        <string>--core-binary</string>
         <string>/Library/Application Support/Hiddify/hiddify-core</string>
-        <string>run</string>
-        <string>-c</string>
-        <string>/Library/Application Support/Hiddify/active-config.json</string>
+        <string>--state-dir</string>
+        <string>/Library/Application Support/Hiddify/state</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

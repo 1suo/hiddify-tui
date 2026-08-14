@@ -10,6 +10,11 @@
 
 set -euo pipefail
 
+if [ "$(id -u)" -ne 0 ]; then
+    echo "install: run as root (sudo $0 [BUILD-DIR])" >&2
+    exit 1
+fi
+
 SRCDIR="${1:-$(pwd)}"
 BINDIR=/usr/local/bin
 LIBDIR="/Library/Application Support/Hiddify"
@@ -26,11 +31,25 @@ install -m0755 "$SRCDIR/hiddify-tui" "$BINDIR/hiddify-tui"
 [ -f "$SRCDIR/hiddify-migrate" ] && install -m0755 "$SRCDIR/hiddify-migrate" "$BINDIR/hiddify-migrate"
 
 if [ -f "$SRCDIR/hiddify-core" ]; then
-    echo "installing core service"
-    install -m0755 "$SRCDIR/hiddify-core" "$LIBDIR/hiddify-core"
+	if [ ! -f "$SRCDIR/hiddify-core-daemon" ]; then
+		echo "install: hiddify-core-daemon is required with a standalone core" >&2
+		exit 1
+	fi
+	echo "installing core service"
+	install -m0755 "$SRCDIR/hiddify-core" "$LIBDIR/hiddify-core"
+	install -m0755 "$SRCDIR/hiddify-core-daemon" "$LIBDIR/hiddify-core-daemon"
     repo="$(cd "$(dirname "$0")/../.." && pwd)"
     install -m0644 "$repo/packaging/macos/com.github.hiddify.core.plist" "$DAEMONDIR/"
-    launchctl load -w "$DAEMONDIR/com.github.hiddify.core.plist" 2>/dev/null || true
+    if lsof -nP -iTCP:17078 -sTCP:LISTEN >/dev/null 2>&1; then
+        echo "not loading or restarting the installed daemon: port 17078 is already in use"
+        echo "the existing VPN/core process was not interrupted"
+    elif launchctl print system/com.github.hiddify.core >/dev/null 2>&1; then
+        echo "the LaunchDaemon is already loaded; it was not restarted"
+    else
+        launchctl bootstrap system "$DAEMONDIR/com.github.hiddify.core.plist"
+        launchctl enable system/com.github.hiddify.core
+        echo "installed and started the standalone headless core"
+    fi
 else
     echo "note: no standalone core for macOS; hiddify-tui connects to the Hiddify GUI's core on 127.0.0.1:17078"
 fi

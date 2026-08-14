@@ -1,0 +1,26 @@
+PackageIdentifier: 1suo.HiddifyTUI
+PackageVersion: @VERSION@
+InstallerType: zip
+Commands:
+  - hiddify-tui
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/1suo/hiddify-tui/releases/download/v@VERSION@/hiddify-tui_@VERSION@_windows_amd64.zip
+    InstallerSha256: @SHA_WINDOWS_AMD64@
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: hiddify-tui.exe
+        PortableCommandAlias: hiddify-tui
+      - RelativeFilePath: hiddify-migrate.exe
+        PortableCommandAlias: hiddify-migrate
+  - Architecture: arm64
+    InstallerUrl: https://github.com/1suo/hiddify-tui/releases/download/v@VERSION@/hiddify-tui_@VERSION@_windows_arm64.zip
+    InstallerSha256: @SHA_WINDOWS_ARM64@
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: hiddify-tui.exe
+        PortableCommandAlias: hiddify-tui
+      - RelativeFilePath: hiddify-migrate.exe
+        PortableCommandAlias: hiddify-migrate
+ManifestType: installer
+ManifestVersion: 1.10.0

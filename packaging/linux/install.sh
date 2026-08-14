@@ -16,7 +16,7 @@ fi
 SRCDIR="${1:-$(pwd)}"
 DESIGNATED_USER="${SUDO_USER:-}"
 
-for binary in hiddify-tui; do
+for binary in hiddify-tui hiddify-core-daemon; do
     if [ ! -f "$SRCDIR/$binary" ]; then
         echo "install: missing $binary in $SRCDIR (build it with 'make build')" >&2
         exit 1
@@ -42,6 +42,7 @@ LIBDIR=/usr/lib/hiddify
 BINDIR=/usr/local/bin
 UNITDIR=/etc/systemd/system
 CORE_VERSION="${HIDDIFY_CORE_VERSION:-v4.1.0}"
+install -d -m0755 "$LIBDIR" "$UNITDIR"
 
 if [ -z "$CORE_BIN" ]; then
     case "$(uname -m)" in
@@ -55,15 +56,23 @@ if [ -z "$CORE_BIN" ]; then
     trap 'rm -rf "$tmpdir"' EXIT
     curl -fsSL "$CORE_URL" -o "$tmpdir/core.tar.gz" || { echo "install: download failed: $CORE_URL" >&2; exit 1; }
     tar xzf "$tmpdir/core.tar.gz" -C "$tmpdir"
-    install -m0755 "$tmpdir"/hiddify-core-*/hiddify-core "$LIBDIR/hiddify-core"
-    install -m0755 "$tmpdir"/hiddify-core-*/libcronet.so "$LIBDIR/libcronet.so"
+    CORE_EXTRACTED="$(find "$tmpdir" -type f -name hiddify-core -print -quit)"
+    if [ -z "$CORE_EXTRACTED" ]; then
+        echo "install: downloaded archive does not contain hiddify-core" >&2
+        exit 1
+    fi
+    install -m0755 "$CORE_EXTRACTED" "$LIBDIR/hiddify-core"
+    CRONET_EXTRACTED="$(find "$tmpdir" -type f -name libcronet.so -print -quit)"
+    if [ -n "$CRONET_EXTRACTED" ]; then
+        install -m0755 "$CRONET_EXTRACTED" "$LIBDIR/libcronet.so"
+    fi
     CORE_BIN="$LIBDIR/hiddify-core"
 fi
 
 echo "installing binaries"
-install -d -m0755 "$LIBDIR" "$UNITDIR"
 [ -n "$CORE_BIN" ] && [ ! "$CORE_BIN" = "$LIBDIR/hiddify-core" ] && install -m0755 "$CORE_BIN" "$LIBDIR/hiddify-core"
 install -m0755 "$SRCDIR/hiddify-tui" "$BINDIR/hiddify-tui"
+install -m0755 "$SRCDIR/hiddify-core-daemon" "$LIBDIR/hiddify-core-daemon"
 [ -f "$SRCDIR/hiddify-migrate" ] && install -m0755 "$SRCDIR/hiddify-migrate" "$BINDIR/hiddify-migrate"
 
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -72,6 +81,14 @@ install -m0644 "$repo/packaging/systemd/hiddify-core.service" "$UNITDIR/hiddify-
 echo "enabling hiddify-core.service"
 systemctl daemon-reload
 systemctl enable hiddify-core.service
+if [ -n "$(ss -H -ltn 'sport = :17078' 2>/dev/null)" ]; then
+    echo "not starting or restarting the installed service: port 17078 is already in use"
+    echo "the existing VPN/core process was not interrupted"
+    START_RESULT="The headless service is installed and enabled; the existing core remains untouched."
+else
+    systemctl start hiddify-core.service
+    START_RESULT="The headless core service is installed and running."
+fi
 
 echo
-echo "Installed. The core runs as a service; hiddify-tui connects to 127.0.0.1:17078."
+echo "Installed. $START_RESULT"

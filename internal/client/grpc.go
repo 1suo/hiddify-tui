@@ -41,6 +41,15 @@ func (c *GRPCClient) Connect(ctx context.Context, content, name string) error {
 	if err != nil {
 		return err
 	}
+	// The standalone CLI must be launched with a bootstrap config. Replace that
+	// already-running config with the requested profile instead of accepting the
+	// core's ALREADY_STARTED response as a successful connection.
+	if response.GetMessageType() == hcore.MessageType_ALREADY_STARTED {
+		response, err = c.api.Restart(ctx, &hcore.StartRequest{ConfigContent: content, ConfigName: name})
+		if err != nil {
+			return err
+		}
+	}
 	return operationError(response)
 }
 

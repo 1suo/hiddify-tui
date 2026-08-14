@@ -1,0 +1,79 @@
+.TH HIDDIFY-TUI 1 "August 2026" "hiddify-tui" "User Commands"
+.SH NAME
+hiddify-tui \- terminal and command-line client for Hiddify Core
+.SH SYNOPSIS
+.B hiddify-tui
+.RI [ options ]
+.br
+.B hiddify-tui
+.RI [ options ] command " " [ arguments ]
+.SH DESCRIPTION
+.B hiddify-tui
+controls a local Hiddify Core gRPC service and stores profiles client-side.
+With no command in an interactive terminal it opens the dashboard. Closing the
+dashboard does not disconnect an active connection.
+.SH OPTIONS
+.TP
+.BR --address " " ADDRESS
+Core gRPC address. The default is 127.0.0.1:17078.
+.TP
+.BR --profile-file " " FILE
+Override the client profile store.
+.TP
+.BR --core-binary " " FILE
+Use a specific standalone hiddify-core binary.
+.TP
+.BR --timeout " " DURATION
+Core startup or request timeout.
+.TP
+.B --json
+Produce stable JSON output where supported.
+.TP
+.B --no-color
+Disable terminal color.
+.TP
+.B --version
+Print the client version.
+.SH COMMANDS
+.TP
+.B status [--watch]
+Show one status snapshot or follow status changes.
+.TP
+.B connect [--profile ID]
+Connect the active or selected profile.
+.TP
+.B disconnect
+Disconnect without stopping the core control service.
+.TP
+.B restart
+Restart using the active profile.
+.TP
+.B profile
+List, show, add, import, rename, activate, refresh, or delete profiles.
+.TP
+.B outbound
+List, select, or test outbounds.
+.TP
+.B logs [--level LEVEL]
+Follow core logs.
+.TP
+.B settings set FILE
+Apply Hiddify settings from JSON.
+.TP
+.B settings validate FILE
+Validate Hiddify settings JSON.
+.TP
+.B migrate gui
+Read and optionally import profiles from the Hiddify GUI database.
+.TP
+.B install-core
+Install the supported standalone core for the current user.
+.SH FILES
+.TP
+.I ~/.local/share/hiddify/profiles.json
+Default client profile store on Linux when XDG_DATA_HOME is unset.
+.SH EXIT STATUS
+0 indicates success, 2 invalid usage, 3 unavailable core, and 4 a rejected operation.
+.SH SEE ALSO
+.BR systemctl (1),
+.BR hiddify-core (1)
