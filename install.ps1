@@ -9,8 +9,12 @@ $principal = [Security.Principal.WindowsPrincipal]::new($identity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw "install: run PowerShell as Administrator"
 }
-if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne [Runtime.InteropServices.Architecture]::X64) {
-    throw "install: the official Windows core currently supports x64 only"
+$nativeArchitecture = $env:PROCESSOR_ARCHITEW6432
+if (-not $nativeArchitecture) {
+    $nativeArchitecture = $env:PROCESSOR_ARCHITECTURE
+}
+if ($nativeArchitecture -ne "AMD64") {
+    throw "install: the official Windows core supports x64 only (detected: $nativeArchitecture)"
 }
 if (-not (Get-Command tar.exe -ErrorAction SilentlyContinue)) {
     throw "install: required command not found: tar.exe"
