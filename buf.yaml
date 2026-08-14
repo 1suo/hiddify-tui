@@ -7,10 +7,17 @@ lint:
   use:
     - STANDARD
   except:
+    # These schemas are vendored from hiddify-core. Renaming packages, enum
+    # values, fields, or services would break wire/API compatibility upstream.
+    - ENUM_VALUE_PREFIX
+    - ENUM_ZERO_VALUE_SUFFIX
+    - FIELD_LOWER_SNAKE_CASE
     - PACKAGE_DIRECTORY_MATCH
+    - PACKAGE_VERSION_SUFFIX
     - RPC_REQUEST_RESPONSE_UNIQUE
     - RPC_REQUEST_STANDARD_NAME
     - RPC_RESPONSE_STANDARD_NAME
+    - SERVICE_SUFFIX
 breaking:
   use:
     - FILE
