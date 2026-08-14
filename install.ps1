@@ -67,9 +67,11 @@ try {
     }
 
     $buildDir = "$tempDir\build"
-    New-Item -ItemType Directory -Path $buildDir | Out-Null
+    $hostDir = "$tempDir\host"
+    New-Item -ItemType Directory -Path $buildDir, $hostDir | Out-Null
     Expand-Archive -Path "$tempDir\$archive" -DestinationPath $buildDir
-    Expand-Archive -Path "$tempDir\$hostArchive" -DestinationPath $buildDir
+    Expand-Archive -Path "$tempDir\$hostArchive" -DestinationPath $hostDir
+    Copy-Item "$hostDir\hiddify-core-host.exe" $buildDir
     & tar.exe -xzf "$tempDir\$coreArchive" -C $buildDir
     if ($LASTEXITCODE -ne 0) {
         throw "install: failed to extract the core runtime"
