@@ -70,7 +70,6 @@ archives:
       - hiddify-tui
       - hiddify-migrate
       - hiddify-core-daemon
-      - hiddify-core-host
     formats:
       - tar.gz
     format_overrides:
@@ -91,6 +90,16 @@ archives:
       - install.ps1
       - packaging/windows/install.ps1
       - packaging/windows/uninstall.ps1
+
+  - id: windows-core-host
+    ids:
+      - hiddify-core-host
+    formats:
+      - zip
+    name_template: >-
+      hiddify-core-host_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - LICENSE
 
 checksum:
   name_template: checksums.txt

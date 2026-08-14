@@ -30,6 +30,7 @@ if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$') {
 
 $version = $tag.Substring(1)
 $archive = "hiddify-tui_${version}_windows_amd64.zip"
+$hostArchive = "hiddify-core-host_${version}_windows_amd64.zip"
 $releaseUrl = "https://github.com/1suo/hiddify-tui/releases/download/$tag"
 $coreVersion = "v4.1.0"
 $coreArchive = "hiddify-lib-windows-amd64.tar.gz"
@@ -41,17 +42,20 @@ New-Item -ItemType Directory -Path $tempDir | Out-Null
 try {
     Write-Host "Downloading hiddify-tui $tag and hiddify-core $coreVersion (x64)"
     Invoke-WebRequest -Uri "$releaseUrl/$archive" -OutFile "$tempDir\$archive"
+    Invoke-WebRequest -Uri "$releaseUrl/$hostArchive" -OutFile "$tempDir\$hostArchive"
     Invoke-WebRequest -Uri "$releaseUrl/checksums.txt" -OutFile "$tempDir\checksums.txt"
     Invoke-WebRequest -Uri $coreUrl -OutFile "$tempDir\$coreArchive"
 
-    $checksumLine = Get-Content "$tempDir\checksums.txt" | Where-Object { $_ -match "\s$([regex]::Escape($archive))$" } | Select-Object -First 1
-    if (-not $checksumLine) {
-        throw "install: $archive is missing from checksums.txt"
-    }
-    $expected = ($checksumLine -split '\s+')[0].ToLowerInvariant()
-    $actual = (Get-FileHash "$tempDir\$archive" -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actual -ne $expected) {
-        throw "install: release checksum verification failed"
+    foreach ($releaseArchive in @($archive, $hostArchive)) {
+        $checksumLine = Get-Content "$tempDir\checksums.txt" | Where-Object { $_ -match "\s$([regex]::Escape($releaseArchive))$" } | Select-Object -First 1
+        if (-not $checksumLine) {
+            throw "install: $releaseArchive is missing from checksums.txt"
+        }
+        $expected = ($checksumLine -split '\s+')[0].ToLowerInvariant()
+        $actual = (Get-FileHash "$tempDir\$releaseArchive" -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -ne $expected) {
+            throw "install: release checksum verification failed for $releaseArchive"
+        }
     }
     $actualCore = (Get-FileHash "$tempDir\$coreArchive" -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualCore -ne $coreSHA256) {
@@ -61,6 +65,7 @@ try {
     $buildDir = "$tempDir\build"
     New-Item -ItemType Directory -Path $buildDir | Out-Null
     Expand-Archive -Path "$tempDir\$archive" -DestinationPath $buildDir
+    Expand-Archive -Path "$tempDir\$hostArchive" -DestinationPath $buildDir
     & tar.exe -xzf "$tempDir\$coreArchive" -C $buildDir
     if ($LASTEXITCODE -ne 0) {
         throw "install: failed to extract the core runtime"
